@@ -52,7 +52,7 @@ public class SatochipCommandSet {
     private final CardChannel apduChannel;
     private SecureChannelSession secureChannel;
     private ApplicationStatus status;
-    private boolean needs_secure_channel= false; // TODO:remove (stored in status)
+    // private boolean needs_secure_channel= false; // TODO:remove (stored in status)
 
     private SatochipParser parser=null;
 
@@ -302,7 +302,7 @@ public class SatochipCommandSet {
         System.out.println("R-APDU cardGetStatus:"+ respApdu.toHexString());
     
         status= new ApplicationStatus(respApdu);
-        needs_secure_channel= status.needsSecureChannel(); //todo: remove
+        // needs_secure_channel= status.needsSecureChannel(); //todo: remove
         System.out.println("Status from cardGetStatus:"+ status.toString());
     
         return respApdu;
@@ -913,7 +913,7 @@ public class SatochipCommandSet {
         System.arraycopy(response, 0, certificate, cert_offset, remaining_size);
         cert_offset+=remaining_size;
         
-        // TODO parse and return raw certificate
+        // parse and return raw certificate
         String cert_pem= parser.convertBytesToStringPem(certificate);
         
         return cert_pem;

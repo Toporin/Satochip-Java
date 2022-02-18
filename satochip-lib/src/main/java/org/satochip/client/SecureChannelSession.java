@@ -44,9 +44,8 @@ public class SecureChannelSession {
 
   private boolean initialized_secure_channel= false;
   
-  //TODO: remove
+  // secure channel keys
   private byte[] secret;
-
   private byte[] iv;
   private int ivCounter;
   byte[] derived_key;

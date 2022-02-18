@@ -25,9 +25,9 @@ public class ApplicationStatus {
     private int protocol_version= 0; //(d["protocol_major_version"]<<8)+d["protocol_minor_version"] 
 
     // todo: remove
-    private byte pinRetryCount;
-    private byte pukRetryCount;
-    private boolean hasMasterKey;
+    // private byte pinRetryCount;
+    // private byte pukRetryCount;
+    // private boolean hasMasterKey;
 
 
     /**
