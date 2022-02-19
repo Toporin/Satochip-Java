@@ -22,21 +22,25 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.security.*;
 import java.util.Arrays;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.nio.ByteBuffer;
 
 /**
  * Handles a SecureChannel session with the card.
  */
 public class SecureChannelSession {
-	
+  
+  private static final Logger logger = Logger.getLogger("org.satochip.client");
+  
   public static final int SC_SECRET_LENGTH = 16;
   public static final int SC_BLOCK_SIZE = 16; 
   public static final int IV_SIZE = 16; 
   public static final int MAC_SIZE= 20;
   
-	// secure channel constants
-	private final static byte INS_INIT_SECURE_CHANNEL = (byte) 0x81;
-	private final static byte INS_PROCESS_SECURE_CHANNEL = (byte) 0x82;
+  // secure channel constants
+  private final static byte INS_INIT_SECURE_CHANNEL = (byte) 0x81;
+  private final static byte INS_PROCESS_SECURE_CHANNEL = (byte) 0x82;
   private final static short SW_SECURE_CHANNEL_REQUIRED = (short) 0x9C20;
   private final static short SW_SECURE_CHANNEL_UNINITIALIZED = (short) 0x9C21;
   private final static short SW_SECURE_CHANNEL_WRONG_IV= (short) 0x9C22;
@@ -144,9 +148,9 @@ public class SecureChannelSession {
       byte[] ivCounterBytes= bb.array();
       System.arraycopy(ivCounterBytes, 0, iv, 12, 4);
       ivCounter+=2;
-      System.out.println("ivCounter: "+ ivCounter);
-      System.out.println("ivCounterBytes: "+ SatochipParser.toHexString(ivCounterBytes));
-      System.out.println("iv: "+ SatochipParser.toHexString(iv));
+      logger.info("SATOCHIPLIB: ivCounter: "+ ivCounter);
+      logger.info("SATOCHIPLIB: ivCounterBytes: "+ SatochipParser.toHexString(ivCounterBytes));
+      logger.info("SATOCHIPLIB: iv: "+ SatochipParser.toHexString(iv));
       
       // encrypt data
       IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
@@ -154,12 +158,10 @@ public class SecureChannelSession {
       sessionCipher = Cipher.getInstance("AES/CBC/PKCS7PADDING", "BC");
       sessionCipher.init(Cipher.ENCRYPT_MODE, sessionEncKey, ivParameterSpec);
       byte[] encrypted = sessionCipher.doFinal(plainBytes);
-      System.out.println("encrypted: "+ SatochipParser.toHexString(derived_key));
-      System.out.println("encrypted: "+ SatochipParser.toHexString(encrypted));
+      // logger.info("SATOCHIPLIB: encrypted: "+ SatochipParser.toHexString(derived_key));
+      // logger.info("SATOCHIPLIB: encrypted: "+ SatochipParser.toHexString(encrypted));
       
       // mac
-      //data_to_mac= iv + len(ciphertext).to_bytes(2, byteorder='big') + ciphertext
-      //mac = hmac.new(self.mac_key, data_to_mac, sha1).digest()
       int offset= 0;
       byte[] data_to_mac= new byte[IV_SIZE + 2 + encrypted.length];
       System.arraycopy(iv, offset, data_to_mac, offset, IV_SIZE);
@@ -167,14 +169,14 @@ public class SecureChannelSession {
       data_to_mac[offset++]= (byte)(encrypted.length>>8);
       data_to_mac[offset++]= (byte)(encrypted.length%256);
       System.arraycopy(encrypted, 0, data_to_mac, offset, encrypted.length);
-      System.out.println("data_to_mac: "+ SatochipParser.toHexString(data_to_mac));
+      // logger.info("SATOCHIPLIB: data_to_mac: "+ SatochipParser.toHexString(data_to_mac));
       
       HMac hMac = new HMac(new SHA1Digest());
       hMac.init(new KeyParameter(mac_key));
       hMac.update(data_to_mac, 0, data_to_mac.length);
       byte[] mac = new byte[20];
       hMac.doFinal(mac, 0);
-      System.out.println("mac: "+ SatochipParser.toHexString(mac));
+      // logger.info("SATOCHIPLIB: mac: "+ SatochipParser.toHexString(mac));
       
       //data= list(iv) + [len(ciphertext)>>8, len(ciphertext)&0xff] + list(ciphertext) + [len(mac)>>8, len(mac)&0xff] + list(mac)
       byte[] data= new byte[IV_SIZE + 2 + encrypted.length + 2 + MAC_SIZE];
@@ -188,7 +190,7 @@ public class SecureChannelSession {
       data[offset++]= (byte)(mac.length>>8);
       data[offset++]= (byte)(mac.length%256);
       System.arraycopy(mac, 0, data, offset, mac.length);
-      System.out.println("data: "+ SatochipParser.toHexString(data));
+      // logger.info("SATOCHIPLIB: data: "+ SatochipParser.toHexString(data));
       
       // convert to C-APDU
       APDUCommand encryptedApdu= new APDUCommand(0xB0, INS_PROCESS_SECURE_CHANNEL, 0x00, 0x00, data);
@@ -196,7 +198,7 @@ public class SecureChannelSession {
       
     } catch (Exception e) {
       e.printStackTrace();
-      System.out.println("Exception in encrypt_secure_channel: "+ e);
+      logger.warning("SATOCHIPLIB: Exception in encrypt_secure_channel: "+ e);
       throw new RuntimeException("Is BouncyCastle in the classpath?", e);
     }
     
@@ -236,7 +238,7 @@ public class SecureChannelSession {
       
     } catch (Exception e) {
       e.printStackTrace();
-      System.out.println("Exception in decrypt_secure_channel: "+ e);
+      logger.warning("SATOCHIPLIB: Exception in decrypt_secure_channel: "+ e);
       throw new RuntimeException("Exception during secure channel decryption: ", e);
     }
     
@@ -254,8 +256,5 @@ public class SecureChannelSession {
     initialized_secure_channel= false;
 	  return;
   }
-  
-  
-  
   
 }

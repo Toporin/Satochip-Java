@@ -5,6 +5,8 @@ import org.satochip.io.APDUResponse;
 
 import java.util.Arrays;
 import java.nio.ByteBuffer;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 
 import org.bouncycastle.crypto.digests.SHA1Digest;
 import org.bouncycastle.crypto.macs.HMac;
@@ -15,7 +17,9 @@ import org.bouncycastle.util.encoders.Hex;
  * Parses the result of a SATODIME_GET_STATUS command retrieving application status.
  */
 public class SatodimeStatus {
-  
+    
+    private static final Logger logger = Logger.getLogger("org.satochip.client");
+    
     private boolean setup_done= false;
     private boolean isOwner= false;
     private int max_num_keys=0;
@@ -145,15 +149,6 @@ public class SatodimeStatus {
     return satodime_keys_state;
   }
   
-  
-  ////setters
-  // public void setUnlockSecret(byte[] secret){
-    // if (secret.length != SIZE_UNLOCK_SECRET){
-      // throw new RuntimeException("Wrong unlock_secret length (should be 20)");
-    // }
-    // System.arraycopy(secret, 0, unlock_secret, 0, unlock_secret.length);
-  // }
-  
   // printer
   public String toString(){
     String status_info=   "setup_done: " + setup_done + "\n" +
@@ -171,25 +166,24 @@ public class SatodimeStatus {
     }
   
     public void setUnlockSecret(byte[] unlock_secret){
-        System.out.println("setUnlockSecret: "+ Hex.toHexString(unlock_secret)); // DEBUG REMOVE
         System.arraycopy(unlock_secret, 0, this.unlock_secret, 0, SIZE_UNLOCK_SECRET);
         isOwner= true;
     }
     
-    // TODO: REMOVE?
+    // todo: remove?
     public byte[] getUnlockSecret(){
         return this.unlock_secret;
     }
-     // TODO: REMOVE?
+     // todo: remove?
     public void setUnlockCounter(byte[] unlock_counter){
-        System.out.println("setUnlockCounter: "+ Hex.toHexString(unlock_counter));
+        logger.info("SATOCHIPLIB: setUnlockCounter: "+ Hex.toHexString(unlock_counter));
         if (unlock_counter!=null){
             System.arraycopy(unlock_counter, 0, this.unlock_counter, 0, SIZE_UNLOCK_COUNTER);
         }
     }
   
     public void incrementUnlockCounter(){
-        System.out.println("incrementUnlockCounter: "+ Hex.toHexString(unlock_counter));
+        logger.info("SATOCHIPLIB: incrementUnlockCounter: "+ Hex.toHexString(unlock_counter));
         // convert byte array to int
         ByteBuffer bb = ByteBuffer.wrap(this.unlock_counter); // big-endian by default
         int counterInt= bb.getInt(); 
@@ -201,8 +195,7 @@ public class SatodimeStatus {
     }
     
     public byte[] computeUnlockCode(byte[] challenge){
-        System.out.println("computeUnlockCode counter: "+ Hex.toHexString(unlock_counter));
-        System.out.println("computeUnlockCode secret: "+ Hex.toHexString(unlock_secret)); // debug to remove
+        logger.info("SATOCHIPLIB: computeUnlockCode counter: "+ Hex.toHexString(unlock_counter));
         HMac hMac = new HMac(new SHA1Digest());
         hMac.init(new KeyParameter(unlock_secret));
         hMac.update(challenge, 0, challenge.length);
