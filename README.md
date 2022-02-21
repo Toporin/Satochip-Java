@@ -4,9 +4,11 @@ This SDK simplifies integration with the [Satochip](https://github.com/Toporin/S
 and Desktop applications. In this SDK you find both the classes needed for generic communication with SmartCards as well 
 as classes specifically addressing the Satochip.
 
-## Usage
+## Build and usage
 
-Currently, you can import the different libraries in your Gradle project by placing the .jar library in a folder (e.g. 'libs')
+You can build the jar file with ```./gradlew clean build```
+
+You can import the different libraries in your Gradle project by placing the .jar library in a folder (e.g. 'libs')
 and by adding the following line in the *dependencies* section of your *build.gradle* file:
 
 ```api files('libs/satochip-lib-0.0.3.jar')```
