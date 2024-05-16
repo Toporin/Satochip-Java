@@ -48,7 +48,12 @@ public class NFCCardManager extends Thread implements NfcAdapter.ReaderCallback 
    * @return if connected, false otherwise
    */
   public boolean isConnected() {
-    return isoDep != null && isoDep.isConnected();
+    try {
+      return isoDep != null && isoDep.isConnected();
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
+    }
   }
 
   @Override

@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 //apply plugin: 'com.github.dcendents.android-maven'
 
 // semantic versioning
-version='0.0.1'
+version='0.0.2'
 
 group = 'org.satochip'
 
