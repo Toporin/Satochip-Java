@@ -54,6 +54,26 @@ public class SatochipParser{
     public SatochipParser(){
 
     }
+
+    public byte[] compressPubKey(byte[] pubkey) throws Exception {
+        if (pubkey.length == 33) {
+            // Already compressed
+            return pubkey;
+        } else if (pubkey.length == 65) {
+            // In uncompressed form
+            byte[] pubkeyComp = Arrays.copyOfRange(pubkey, 0, 33);
+            // Compute compression byte
+            int parity = pubkey[64] % 2;
+            if (parity == 0) {
+                pubkeyComp[0] = (byte) 0x02;
+            } else {
+                pubkeyComp[0] = (byte) 0x03;
+            }
+            return pubkeyComp;
+        } else {
+            throw new Exception("Wrong public key length: " + pubkey.length + ", expected: 65");
+        }
+    }
   
    /****************************************
    *                  PARSER                *

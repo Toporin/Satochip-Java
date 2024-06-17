@@ -6,6 +6,7 @@ version='0.0.4'
 
 dependencies {
     implementation 'org.bouncycastle:bcprov-jdk15on:1.60'
+    implementation 'org.bitcoinj:bitcoinj-core:0.16.2'
 }
 
 task sourcesJar(type: Jar, dependsOn: classes) {
