@@ -23,6 +23,7 @@ import org.bouncycastle.math.ec.custom.sec.SecP256K1Curve;
 import org.bouncycastle.util.Properties;
 //import org.bouncycastle.util.encoders.Base64;
 
+import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.math.BigInteger;
 import java.io.IOException;
@@ -78,6 +79,71 @@ public class SatochipParser{
    /****************************************
    *                  PARSER                *
    ****************************************/
+
+   public String getBip32PathParentPath(String bip32path) throws Exception {
+       System.out.println("In getBip32PathParentPath");
+       String[] splitPath = bip32path.split("/");
+       if (splitPath.length <= 1) {
+           throw new Exception("Invalid BIP32 path: " + bip32path);
+       }
+       String[] parentPathArray = Arrays.copyOf(splitPath, splitPath.length - 1);
+       String parentPath = String.join("/", parentPathArray);
+       return parentPath;
+   }
+
+    public byte[][] parseBip85GetExtendedKey(APDUResponse rapdu){
+        logger.warning("SATOCHIPLIB: parseBip85GetExtendedKey: Start ");
+
+        try {
+            byte[] data = rapdu.getData();
+            logger.warning("SATOCHIPLIB: parseBip85GetExtendedKey data: " + toHexString(data));
+
+            int entropySize = 256 * (data[0] & 0xFF) + (data[1] & 0xFF);
+            byte[] entropyBytes = Arrays.copyOfRange(data, 2, 2 + entropySize);
+
+            return new byte[][] {entropyBytes, new byte[0]};
+        } catch(Exception e) {
+            throw new RuntimeException("Is BouncyCastle in the classpath?", e);
+        }
+    }
+
+   public Bip32PathToBytesObject parseBip32PathToBytes(String bip32path) throws Exception {
+       logger.info("SATOCHIPLIB: parseBip32PathToBytes: Start ");
+
+       String[] splitPath = bip32path.split("/");
+       if (splitPath[0].equals("m")) {
+           splitPath = Arrays.copyOfRange(splitPath, 1, splitPath.length);
+       }
+
+       int depth = splitPath.length;
+       byte[] bytePath = new byte[depth * 4];
+
+       int byteIndex = 0;
+       for (int index = 0; index < depth; index++) {
+           String subpathString = splitPath[index];
+           long subpathInt;
+           if (subpathString.endsWith("'") || subpathString.endsWith("h")) {
+               subpathString = subpathString.replace("'", "").replace("h", "");
+               try {
+                   long tmp = Long.parseLong(subpathString);
+                   subpathInt = tmp + 0x80000000L;
+               } catch (NumberFormatException e) {
+                   throw new Exception("Failed to parse Bip32 path: " + bip32path);
+               }
+           } else {
+               try {
+                   subpathInt = Long.parseLong(subpathString);
+               } catch (NumberFormatException e) {
+                   throw new Exception("Failed to parse Bip32 path: " + bip32path);
+               }
+           }
+           byte[] subPathBytes = ByteBuffer.allocate(4).putInt((int) subpathInt).array();
+           System.arraycopy(subPathBytes, 0, bytePath, byteIndex, subPathBytes.length);
+           byteIndex += 4;
+       }
+
+       return new Bip32PathToBytesObject(depth, bytePath);
+   }
   
     public byte[] parseInitiateSecureChannel(APDUResponse rapdu){
     
@@ -164,9 +230,8 @@ public class SatochipParser{
             throw new RuntimeException("Exception during Authentikey recovery", e);
         }
     }
-  
-    public byte[] parseBip32GetExtendedKey(APDUResponse rapdu){
-    
+    public byte[][] parseBip32GetExtendedKey(APDUResponse rapdu){
+
         try{
             byte[] data= rapdu.getData();
             logger.info("SATOCHIPLIB: parseBip32GetExtendedKey data: " + toHexString(data));
@@ -203,13 +268,10 @@ public class SatochipParser{
             byte[] pubkey= recoverPubkey(msg1, sig1, coordx);
 
             // todo: recover from si2
-
-            return pubkey;
-      
+            return new byte[][] {pubkey, chaincode};
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
-   
     }
   
     public byte[] parseSatodimeGetPubkey(APDUResponse rapdu){

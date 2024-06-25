@@ -76,20 +76,33 @@ public class SeedkeeperSecretHeader {
     public byte[] getHeaderBytes() {
         byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
         byte labelSize = (byte) labelBytes.length;
-        byte[] headerBytes = {type.getValue(), origin.getValue(), exportRights.getValue(), nbExportPlaintext, nbExportEncrypted, useCounter};
-        byte[] result = new byte[HEADER_SIZE + labelBytes.length + 2];
-        System.arraycopy(headerBytes, 0, result, 0, headerBytes.length);
-        System.arraycopy(fingerprintBytes, 0, result, headerBytes.length, fingerprintBytes.length);
-        result[HEADER_SIZE] = subtype;
-//        result[HEADER_SIZE + 1] = rfu2;
-        result[HEADER_SIZE + 2] = labelSize;
-        System.arraycopy(labelBytes, 0, result, HEADER_SIZE + 3, labelBytes.length);
+        byte[] headerBytes = new byte[] {
+                type.getValue(),
+                origin.getValue(),
+                exportRights.getValue(),
+                nbExportPlaintext,
+                nbExportEncrypted,
+                useCounter
+        };
+
+        byte[] result = new byte[headerBytes.length + fingerprintBytes.length + 3 + labelBytes.length];
+        int index = 0;
+
+        System.arraycopy(headerBytes, 0, result, index, headerBytes.length);
+        index += headerBytes.length;
+        System.arraycopy(fingerprintBytes, 0, result, index, fingerprintBytes.length);
+        index += fingerprintBytes.length;
+        result[index++] = subtype;
+        result[index++] = 0; //rfu2 not used
+        result[index++] = labelSize;
+        System.arraycopy(labelBytes, 0, result, index, labelBytes.length);
+
         return result;
     }
 
-//    public static byte[] getFingerprintBytes(byte[] secretBytes) {
-//        byte[] secretHash = Sha256Hash.hash(secretBytes);
-//        return Arrays.copyOfRange(secretHash, 0, 4);
-//    }
+    public static byte[] getFingerprintBytes(byte[] secretBytes) {
+        byte[] secretHash = Sha256Hash.hash(secretBytes);
+        return Arrays.copyOfRange(secretHash, 0, 4);
+    }
 }
 

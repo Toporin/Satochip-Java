@@ -1,6 +1,7 @@
 package org.satochip.client.seedkeeper;
 
 public enum StatusWord {
+    OK(0x9000, "Ok"),
     LOCK_ERROR(0x9C30, "Lock error"),
     EXPORT_NOT_ALLOWED(0x9C31, "Export not allowed"),
     USAGE_NOT_ALLOWED(0x9C36, "Usage not allowed"),
