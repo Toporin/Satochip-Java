@@ -78,6 +78,21 @@ public final class Constants {
     public final static byte INS_RESET_SATODIME_KEY= (byte)0x59; // change key state from unsealed to uninitialized
     public final static byte INS_INITIATE_SATODIME_TRANSFER= (byte)0x5A;
 
+    // Seedkeeper
+
+    public final static byte INS_GET_SEEDKEEPER_STATUS = (byte)0xA7;
+    public final static byte INS_GENERATE_SEEDKEEPER_MASTER_SEED = (byte)0xA0;
+    public final static byte INS_GENERATE_SEEDKEEPER_RANDOM_SECRET = (byte)0xA3;
+    public final static byte INS_GENERATE_SEEDKEEPER_2FA_SECRET = (byte)0xAE;
+    public final static byte INS_IMPORT_SEEDKEEPER_SECRET = (byte)0xA1;
+    public final static byte INS_EXPORT_SEEDKEEPER_SECRET = (byte)0xA2;
+    public final static byte INS_EXPORT_SEEDKEEPER_SECRET_TO_SATOCHIP = (byte)0xA8;
+    public final static byte INS_RESET_SEEDKEEPER_SECRET = (byte)0xA5;
+    public final static byte INS_LIST_SEEDKEEPER_SECRET_HEADERS = (byte)0xA6;
+    public final static byte INS_PRINT_SEEDKEEPER_LOGS = (byte)0xA9;
+    public final static byte INS_DERIVE_SEEDKEEPER_MASTER_PASSWORD = (byte)0xAF;
+
+
 
     /****************************************
     *          Error codes                 *
@@ -184,6 +199,14 @@ public final class Constants {
     public final static byte ALG_EC_SVDP_DH_PLAIN= (byte) 3; //https://javacard.kenai.com/javadocs/connected/javacard/security/KeyAgreement.html#ALG_EC_SVDP_DH_PLAIN
     public final static byte ALG_EC_SVDP_DH_PLAIN_XY= (byte) 6; //https://docs.oracle.com/javacard/3.0.5/api/javacard/security/KeyAgreement.html#ALG_EC_SVDP_DH_PLAIN_XY
     public final static short LENGTH_EC_FP_256= (short) 256;
+
+    /****************************************
+     *               Seedkeeper             *
+     ****************************************/
+    public final static byte LOCK_ERROR = (byte)0x9C30;
+    public final static byte EXPORT_NOT_ALLOWED = (byte)0x9C31;
+    public final static byte USAGE_NOT_ALLOWED = (byte)0x9C36;
+    public final static byte WRONG_SECRET_TYPE = (byte)0x9C38;
 
     /****************************************
     *               Satodime                   *

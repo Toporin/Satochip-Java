@@ -1,5 +1,6 @@
 package org.satochip.client;
 
+import org.bitcoinj.crypto.MnemonicCode;
 import org.satochip.io.APDUResponse;
 
 /**
@@ -108,5 +109,14 @@ public class ApplicationStatus {
                                   "applet_minor_version: " + applet_minor_version;
         return status_info;
     }
-  
+    public int getCardVersionInt() {
+        return ((int) protocol_major_version * (1 << 24)) +
+                ((int) protocol_minor_version * (1 << 16)) +
+                ((int) applet_major_version * (1 << 8)) +
+                ((int) applet_minor_version);
+    }
+
+    public int getProtocolVersion() {
+        return protocol_version;
+    }
 }
