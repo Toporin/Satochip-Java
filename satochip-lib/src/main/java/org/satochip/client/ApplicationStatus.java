@@ -1,6 +1,5 @@
 package org.satochip.client;
 
-import org.bitcoinj.crypto.MnemonicCode;
 import org.satochip.io.APDUResponse;
 
 /**

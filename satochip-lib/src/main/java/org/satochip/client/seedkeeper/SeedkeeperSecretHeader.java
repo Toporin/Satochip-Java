@@ -1,7 +1,5 @@
 package org.satochip.client.seedkeeper;
 
-import org.satochip.globalplatform.Crypto;
-
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import org.bitcoinj.core.Sha256Hash;

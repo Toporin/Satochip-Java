@@ -46,4 +46,32 @@ public class SeedkeeperStatus {
             throw new RuntimeException(statusWord.getMessage());
         }
     }
+
+    public boolean isSetupDone() {
+        return setup_done;
+    }
+
+    public int getNbSecrets() {
+        return nbSecrets;
+    }
+
+    public int getTotalMemory() {
+        return totalMemory;
+    }
+
+    public int getFreeMemory() {
+        return freeMemory;
+    }
+
+    public int getNbLogsTotal() {
+        return nbLogsTotal;
+    }
+
+    public int getNbLogsAvail() {
+        return nbLogsAvail;
+    }
+
+    public byte[] getLastLog() {
+        return lastLog;
+    }
 }

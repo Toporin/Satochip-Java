@@ -107,7 +107,7 @@ public class SatochipParser{
         }
     }
 
-   public Bip32PathToBytesObject parseBip32PathToBytes(String bip32path) throws Exception {
+   public Bip32Path parseBip32PathToBytes(String bip32path) throws Exception {
        logger.info("SATOCHIPLIB: parseBip32PathToBytes: Start ");
 
        String[] splitPath = bip32path.split("/");
@@ -142,7 +142,7 @@ public class SatochipParser{
            byteIndex += 4;
        }
 
-       return new Bip32PathToBytesObject(depth, bytePath);
+       return new Bip32Path(depth, bytePath, bip32path);
    }
   
     public byte[] parseInitiateSecureChannel(APDUResponse rapdu){
@@ -230,7 +230,7 @@ public class SatochipParser{
             throw new RuntimeException("Exception during Authentikey recovery", e);
         }
     }
-    public byte[][] parseBip32GetExtendedKey(APDUResponse rapdu){
+    public byte[][] parseBip32GetExtendedKey(APDUResponse rapdu){//todo: return a wrapped
 
         try{
             byte[] data= rapdu.getData();

@@ -60,10 +60,6 @@ public class SatochipCommandSet {
     // satodime
     SatodimeStatus satodimeStatus = null;
 
-    // seedkeeper
-    SeedkeeperStatus seedkeeperStatus = new SeedkeeperStatus();
-
-
     public static final byte[] SATOCHIP_AID = Hex.decode("5361746f43686970"); //SatoChip
     public static final byte[] SEEDKEEPER_AID = Hex.decode("536565644b6565706572"); //SeedKeeper
     public static final byte[] SATODIME_AID = Hex.decode("5361746f44696d65"); //SatoDime 
@@ -326,9 +322,8 @@ public class SatochipCommandSet {
 
         return respApdu;
     }
-
     // only valid for v0.12 and higher
-    public APDUResponse cardGetAuthentikey() {
+    public byte[] cardGetAuthentikey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_AUTHENTIKEY, 0x00, 0x00, new byte[0]);
         logger.info("SATOCHIPLIB: C-APDU cardExportAuthentikey:" + plainApdu.toHexString());
@@ -340,22 +335,7 @@ public class SatochipCommandSet {
         authentikeyHex = parser.toHexString(authentikey);
         logger.info("SATOCHIPLIB: Authentikey from cardExportAuthentikey:" + authentikeyHex);
 
-        return respApdu;
-    }
-// new method because it is used also in Satodime!!!
-    public AuthentikeyObject cardGetSeedkeeperAuthentikey() {
-
-        APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_AUTHENTIKEY, 0x00, 0x00, new byte[0]);
-        logger.warning("SATOCHIPLIB: C-APDU cardExportAuthentikey:" + plainApdu.toHexString());
-        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU cardExportAuthentikey:" + respApdu.toHexString());
-
-        // parse and recover pubkey
-        authentikey = parser.parseBip32GetAuthentikey(respApdu);
-        authentikeyHex = parser.toHexString(authentikey);
-        logger.warning("SATOCHIPLIB: Authentikey from cardExportAuthentikey:" + authentikeyHex);
-
-        return new AuthentikeyObject(respApdu, authentikeyHex, authentikey);
+        return authentikey;
     }
 
     public APDUResponse cardBip32GetAuthentikey() {
@@ -545,16 +525,16 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
-    public APDUResponse cardBip32GetExtendedKey() throws Exception {
+    public byte[][] cardBip32GetExtendedKey() throws Exception {
         if (defaultBip32path == null) {
             defaultBip32path = "m/44'/60'/0'/0/0";
         }
         return cardBip32GetExtendedKey(defaultBip32path, null, null);
     }
 
-    public APDUResponse cardBip32GetExtendedKey(String stringPath, Byte flags, Integer sid) throws Exception {
+    public byte[][] cardBip32GetExtendedKey(String stringPath, Byte flags, Integer sid) throws Exception {
         logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey");
-        Bip32PathToBytesObject parsedPath = parser.parseBip32PathToBytes(stringPath);
+        Bip32Path parsedPath = parser.parseBip32PathToBytes(stringPath);
         if (parsedPath.getDepth() > 10) {
             throw new Exception("Path length exceeds maximum depth of 10: " + parsedPath.getDepth());
         }
@@ -623,14 +603,17 @@ public class SatochipCommandSet {
                         logger.info("SATOCHIPLIB: cardBip32GetExtendedKey: Child Derivation optimization...");
                         throw new Exception("Unsupported legacy option during BIP32 derivation");
                     }
-                    extendedKey = parser.parseBip32GetExtendedKey(respApdu)[0];
-                    extendedChaincode = parser.parseBip32GetExtendedKey(respApdu)[1];
+                    byte[][] extendedKeyData = parser.parseBip32GetExtendedKey(respApdu);
+                    extendedKey = extendedKeyData[0];// todo: return array
+                    extendedChaincode = extendedKeyData[1];
                     extendedKeyHex = parser.toHexString(extendedKey);
+                    return extendedKeyData;
                 } else { // BIP32 privkey
-                    extendedPrivKey = parser.parseBip32GetExtendedKey(respApdu)[0];
+                    byte[][] extendedPrivKeyData = parser.parseBip32GetExtendedKey(respApdu);
+                    extendedPrivKey = extendedPrivKeyData[0];
                     extendedPrivKeyHex = parser.toHexString(extendedPrivKey);
+                    return extendedPrivKeyData;
                 }
-                return respApdu;
             }
         }
     }
@@ -660,8 +643,7 @@ public class SatochipCommandSet {
             childPubkey = parser.compressPubKey(extendedKey);
         }
 
-        Bip32PathToBytesObject parsedPath = parser.parseBip32PathToBytes(path);
-//        Tuple<Integer, byte[]> parsedPath = parser.parseBip32PathToBytes(path);
+        Bip32Path parsedPath = parser.parseBip32PathToBytes(path);
         int depth = parsedPath.getDepth();
         byte[] bytePath = parsedPath.getBytes();
         byte[] fingerprintBytes = new byte[4];
@@ -1017,15 +999,16 @@ public class SatochipCommandSet {
      *            SEEDKEEPER                *
      ****************************************/
 
-    public APDUResponse seedkeeperGetStatus() {
+    public SeedkeeperStatus seedkeeperGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SEEDKEEPER_STATUS, 0x00, 0x00, new byte[0]);
 
         logger.info("SATOCHIPLIB: C-APDU seedkeeperGetStatus:" + plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU seedkeeperGetStatus:" + respApdu.toHexString());
-
+        SeedkeeperStatus seedkeeperStatus = new SeedkeeperStatus();
         seedkeeperStatus.updateStatus(respApdu);
-        return respApdu;
+
+        return seedkeeperStatus;
     }
 
     /**
@@ -1038,7 +1021,7 @@ public class SatochipCommandSet {
      * <p>
      * - Returns: Response adpu & SeedkeeperSecretHeader data
      */
-    public SeedkeeperMasterSeedResult seedkeeperGenerateMasterseed(int seedSize, SeedkeeperExportRights exportRights, String label) throws Exception {
+    public SeedkeeperSecretHeader seedkeeperGenerateMasterseed(int seedSize, SeedkeeperExportRights exportRights, String label) throws Exception {
         byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
         byte[] data = new byte[labelBytes.length + 1];
         data[0] = (byte) labelBytes.length;
@@ -1078,13 +1061,11 @@ public class SatochipCommandSet {
                 fingerprintBytes,
                 label
         );
-        List<SeedkeeperSecretHeader> headers = new ArrayList<>();
-        headers.add(header);
 
-        return new SeedkeeperMasterSeedResult(respApdu, headers);
+        return header;
     }
 
-    public SeedkeeperMasterSeedResult seedkeeperGenerateRandomSecret(
+    public List<SeedkeeperSecretHeader> seedkeeperGenerateRandomSecret(
             SeedkeeperSecretType stype,
             byte subtype,
             byte size,
@@ -1169,10 +1150,10 @@ public class SatochipCommandSet {
             headers.add(header2);
         }
 
-        return new SeedkeeperMasterSeedResult(respApdu, headers);
+        return headers;
     }
 
-    public SeedkeeperImportSecretResult seedkeeperImportSecret(
+    public SeedkeeperSecretHeader seedkeeperImportSecret(
             SeedkeeperSecretObject secretObject
     ) throws Exception {
         logger.info("SATOCHIPLIB: seedkeeperImportSecret");
@@ -1300,8 +1281,14 @@ public class SatochipCommandSet {
                     "but recovered" +
                     Arrays.toString(fingerprintFromSeedkeeper)
             );
+            throw new RuntimeException("Fingerprints mismatch: " +
+                    " expected" + Arrays.toString(fingerprintFromSecret) +
+                    "but recovered" +
+                    Arrays.toString(fingerprintFromSeedkeeper)
+            );
         }
-        return new SeedkeeperImportSecretResult(respApdu, sid, fingerprintFromSeedkeeper);
+        secretHeader.sid = sid;
+        return secretHeader;
     }
 
     public SeedkeeperSecretObject seedkeeperExportSecret(
