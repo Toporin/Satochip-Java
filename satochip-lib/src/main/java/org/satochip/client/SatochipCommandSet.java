@@ -1599,6 +1599,72 @@ public class SatochipCommandSet {
         return logs;
     }
 
+    public String getCardLabel() {
+        logger.info("SATOCHIPLIB: getCardLabel START");
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x01, new byte[0]);
+        logger.info("SATOCHIPLIB: C-APDU getCardLabel:"+ plainApdu.toHexString());
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU getCardLabel:"+ respApdu.toHexString());
+        int sw = respApdu.getSw();
+        String label;
+        if (sw == 0x9000){
+            byte labelSize = respApdu.getData()[0];
+            try {
+                label = new String(respApdu.getData(), 1, labelSize, StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                logger.warning("SATOCHIPLIB: getCardLabel UnicodeDecodeError while decoding card label!");
+                label = new String(respApdu.getData(), 1, respApdu.getData().length - 1, StandardCharsets.UTF_8);
+            }
+        } else if (sw == 0x6D00) {
+            logger.info("SATOCHIPLIB: getCardLabel  label not set:" + sw);
+            label = "(none)";
+        } else {
+            logger.warning("SATOCHIPLIB: getCardLabel Error while recovering card label:" + sw);
+            label = "(unknown)";
+        }
+        return label;
+    }
+
+    public Boolean setCardLabel(String label) {
+        logger.info("SATOCHIPLIB: setCardLabel START");
+
+        byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
+        byte[] data = new byte[1 + labelData.length];
+        data[0] = (byte) labelData.length;
+        System.arraycopy(labelData, 0, data, 1, labelData.length);
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x00, data);
+        logger.info("SATOCHIPLIB: C-APDU setCardLabel:"+ plainApdu.toHexString());
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU setCardLabel:"+ respApdu.toHexString());
+        int sw = respApdu.getSw();
+        return sw == 0x9000;
+    }
+
+    public Boolean changeCardPin(byte[] oldPin, byte[] newPin) throws Exception {
+        logger.info("SATOCHIPLIB: changeCardPin START");
+
+        byte[] data = new byte[1 + oldPin.length + 1 + newPin.length];
+        data[0] = (byte) oldPin.length;
+        System.arraycopy(oldPin, 0, data, 1, oldPin.length);
+        data[1 + oldPin.length] = (byte) newPin.length;
+        System.arraycopy(newPin, 0, data, 2 + oldPin.length, newPin.length);
+        setPin0(newPin);
+        try{
+            APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHANGE_PIN, 0x00, 0x00, data);
+            logger.info("SATOCHIPLIB: C-APDU changeCardPin:"+ plainApdu.toHexString());
+            APDUResponse respApdu = this.cardTransmit(plainApdu);
+            logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ respApdu.toHexString());
+            int sw = respApdu.getSw();
+            return sw == 0x9000;
+        } catch (Exception e){
+            setPin0(oldPin);
+            return false;
+        }
+    }
+
+
     /****************************************
     *            PKI commands              *
     ****************************************/  
