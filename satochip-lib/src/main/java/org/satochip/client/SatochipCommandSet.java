@@ -43,6 +43,7 @@ public class SatochipCommandSet {
     private SatochipParser parser = null;
 
     private byte[] pin0 = null;
+    private List<byte[]> possibleAuthentikeys = new ArrayList<byte[]>();
     private byte[] authentikey = null;
     private String authentikeyHex = null;
     private String defaultBip32path = null;
@@ -51,7 +52,6 @@ public class SatochipCommandSet {
     private String extendedKeyHex = null;
     private byte[] extendedPrivKey = null;
     private String extendedPrivKeyHex = null;
-
 
     // Satodime, SeedKeeper or Satochip?
     private String cardType = null;
@@ -153,6 +153,10 @@ public class SatochipCommandSet {
         return authentikeyHex;
     }
 
+    public List<byte[]> getPossibleAuthentikeys(){
+        return this.possibleAuthentikeys;
+    }
+
     public SatochipParser getParser() {
         return parser;
     }
@@ -195,6 +199,7 @@ public class SatochipCommandSet {
                         // get card's public key
                         APDUResponse secChannelRapdu = cardInitiateSecureChannel();
                         byte[] pubkey = parser.parseInitiateSecureChannel(secChannelRapdu);
+                        possibleAuthentikeys = parser.parseInitiateSecureChannelGetPossibleAuthentikeys(secChannelRapdu);
                         // setup secure channel
                         secureChannel.initiateSecureChannel(pubkey);
                         logger.info("SATOCHIPLIB: secure Channel initiated!");
