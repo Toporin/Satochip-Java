@@ -14,7 +14,8 @@ public enum SeedkeeperSecretType {
     MASTER_PASSWORD((byte) 0x91),
     CERTIFICATE((byte) 0xA0),
     SECRET_2FA((byte) 0xB0),
-    DATA((byte) 0xC0);
+    DATA((byte) 0xC0),
+    WALLET_DESCRIPTOR((byte) 0xC1);
 
     private final byte value;
 
