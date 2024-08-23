@@ -1496,6 +1496,11 @@ public class SatochipCommandSet {
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU seedkeeperResetSecret:" + respApdu.toHexString());
 
+        // return early for empty cards
+        if (respApdu.getSw1() == 0x9C && respApdu.getSw2() == 0x12){
+            return secretHeaders;
+        }
+
         respApdu.checkOK();
 
         while(respApdu.getSw1() == 0x90 && respApdu.getSw2() == 0x00) {
