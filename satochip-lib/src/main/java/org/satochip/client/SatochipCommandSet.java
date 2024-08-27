@@ -174,6 +174,8 @@ public class SatochipCommandSet {
         this.secureChannel = secureChannel;
     }
 
+
+
     public APDUResponse cardTransmit(APDUCommand plainApdu) {
 
         // we try to transmit the APDU until we receive the answer or we receive an unrecoverable error
@@ -196,12 +198,7 @@ public class SatochipCommandSet {
                 if (status.needsSecureChannel() && (ins != 0xA4) && (ins != 0x81) && (ins != 0x82) && (ins != INS_GET_STATUS)) {
 
                     if (!secureChannel.initializedSecureChannel()) {
-                        // get card's public key
-                        APDUResponse secChannelRapdu = cardInitiateSecureChannel();
-                        byte[] pubkey = parser.parseInitiateSecureChannel(secChannelRapdu);
-                        possibleAuthentikeys = parser.parseInitiateSecureChannelGetPossibleAuthentikeys(secChannelRapdu);
-                        // setup secure channel
-                        secureChannel.initiateSecureChannel(pubkey);
+                        cardInitiateSecureChannel();
                         logger.info("SATOCHIPLIB: secure Channel initiated!");
                     }
                     // encrypt apdu
@@ -315,7 +312,8 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
-    public APDUResponse cardInitiateSecureChannel() throws IOException {
+    // do setup secure channel in this method
+    public List<byte[]> cardInitiateSecureChannel() throws IOException {
 
         byte[] pubkey = secureChannel.getPublicKey();
 
@@ -325,7 +323,12 @@ public class SatochipCommandSet {
         APDUResponse respApdu = apduChannel.send(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardInitiateSecureChannel:" + respApdu.toHexString());
 
-        return respApdu;
+        byte[] keyData = parser.parseInitiateSecureChannel(respApdu);
+        possibleAuthentikeys = parser.parseInitiateSecureChannelGetPossibleAuthentikeys(respApdu);
+        // setup secure channel
+        secureChannel.initiateSecureChannel(keyData);
+
+        return possibleAuthentikeys;
     }
     // only valid for v0.12 and higher
     public byte[] cardGetAuthentikey() {
