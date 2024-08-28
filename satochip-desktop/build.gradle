@@ -3,7 +3,7 @@ apply plugin: 'maven'
 apply plugin:'application'
 
 // semantic versioning
-version='0.0.1'
+//version='0.0.1'
 
 dependencies {
     compile project(':satochip-lib')
