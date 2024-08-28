@@ -1809,11 +1809,17 @@ public class SatochipCommandSet {
             // load certs
             InputStream isCa = this.getClass().getClassLoader().getResourceAsStream("cert/ca.cert");  
             //TODO: load subca cert depending on card type
-            InputStream isSubca = this.getClass().getClassLoader().getResourceAsStream("cert/subca-satodime.cert"); 
+            InputStream isSubca;
+            if (cardType.equals("satochip")) {
+                isSubca = this.getClass().getClassLoader().getResourceAsStream("cert/subca-satochip.cert");
+            } else if (cardType.equals("seedkeeper")) {
+                isSubca = this.getClass().getClassLoader().getResourceAsStream("cert/subca-seedkeeper.cert");
+            } else {
+                isSubca = this.getClass().getClassLoader().getResourceAsStream("cert/subca-satodime.cert");
+            }
             InputStream isDevice = new ByteArrayInputStream(cert_pem.getBytes(StandardCharsets.UTF_8));
-            logger.warning("SATOCHIPLIB: isDevice: " + isDevice.read());
             // gen certs
-            CertificateFactory certificateFactory= CertificateFactory.getInstance("X.509", "BC"); // without BC provider, validation fails...
+            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC"); // without BC provider, validation fails...
             Certificate certCa = certificateFactory.generateCertificate(isCa);
             txt_ca= certCa.toString();
             logger.warning("SATOCHIPLIB: certCa: " + txt_ca);
