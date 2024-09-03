@@ -58,7 +58,7 @@ class Main {
         cc.setPin0(pin);
         APDUResponse resp3= cc.cardVerifyPIN();
     
-		APDUResponse resp4= cc.cardGetAuthentikey();
+		cc.cardGetAuthentikey();
     
         APDUResponse resp5= cc.cardResetSeed(pin, null);
         

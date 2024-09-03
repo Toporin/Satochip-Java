@@ -8,27 +8,24 @@ import org.satochip.io.CardChannel;
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9IntegerConverter;
-//import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
-//import org.bouncycastle.crypto.generators.ECKeyPairGenerator;
 import org.bouncycastle.crypto.params.*;
 import org.bouncycastle.crypto.signers.ECDSASigner;
-//import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
 import org.bouncycastle.math.ec.ECAlgorithms;
 import org.bouncycastle.math.ec.ECPoint;
-//import org.bouncycastle.math.ec.FixedPointCombMultiplier;
-//import org.bouncycastle.math.ec.FixedPointUtil;
 import org.bouncycastle.math.ec.custom.sec.SecP256K1Curve;
 import org.bouncycastle.util.Properties;
-//import org.bouncycastle.util.encoders.Base64;
 
+import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.math.BigInteger;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Base64;
 import java.util.logging.Logger;
 import java.util.logging.Level;
@@ -54,10 +51,95 @@ public class SatochipParser{
     public SatochipParser(){
 
     }
+
+    public byte[] compressPubKey(byte[] pubkey) throws Exception {
+        if (pubkey.length == 33) {
+            // Already compressed
+            return pubkey;
+        } else if (pubkey.length == 65) {
+            // In uncompressed form
+            byte[] pubkeyComp = Arrays.copyOfRange(pubkey, 0, 33);
+            // Compute compression byte
+            int parity = pubkey[64] % 2;
+            if (parity == 0) {
+                pubkeyComp[0] = (byte) 0x02;
+            } else {
+                pubkeyComp[0] = (byte) 0x03;
+            }
+            return pubkeyComp;
+        } else {
+            throw new Exception("Wrong public key length: " + pubkey.length + ", expected: 65");
+        }
+    }
   
    /****************************************
    *                  PARSER                *
    ****************************************/
+
+   public String getBip32PathParentPath(String bip32path) throws Exception {
+       System.out.println("In getBip32PathParentPath");
+       String[] splitPath = bip32path.split("/");
+       if (splitPath.length <= 1) {
+           throw new Exception("Invalid BIP32 path: " + bip32path);
+       }
+       String[] parentPathArray = Arrays.copyOf(splitPath, splitPath.length - 1);
+       String parentPath = String.join("/", parentPathArray);
+       return parentPath;
+   }
+
+    public byte[][] parseBip85GetExtendedKey(APDUResponse rapdu){
+        logger.warning("SATOCHIPLIB: parseBip85GetExtendedKey: Start ");
+
+        try {
+            byte[] data = rapdu.getData();
+            logger.warning("SATOCHIPLIB: parseBip85GetExtendedKey data: " + toHexString(data));
+
+            int entropySize = 256 * (data[0] & 0xFF) + (data[1] & 0xFF);
+            byte[] entropyBytes = Arrays.copyOfRange(data, 2, 2 + entropySize);
+
+            return new byte[][] {entropyBytes, new byte[0]};
+        } catch(Exception e) {
+            throw new RuntimeException("Is BouncyCastle in the classpath?", e);
+        }
+    }
+
+   public Bip32Path parseBip32PathToBytes(String bip32path) throws Exception {
+       logger.info("SATOCHIPLIB: parseBip32PathToBytes: Start ");
+
+       String[] splitPath = bip32path.split("/");
+       if (splitPath[0].equals("m")) {
+           splitPath = Arrays.copyOfRange(splitPath, 1, splitPath.length);
+       }
+
+       int depth = splitPath.length;
+       byte[] bytePath = new byte[depth * 4];
+
+       int byteIndex = 0;
+       for (int index = 0; index < depth; index++) {
+           String subpathString = splitPath[index];
+           long subpathInt;
+           if (subpathString.endsWith("'") || subpathString.endsWith("h")) {
+               subpathString = subpathString.replace("'", "").replace("h", "");
+               try {
+                   long tmp = Long.parseLong(subpathString);
+                   subpathInt = tmp + 0x80000000L;
+               } catch (NumberFormatException e) {
+                   throw new Exception("Failed to parse Bip32 path: " + bip32path);
+               }
+           } else {
+               try {
+                   subpathInt = Long.parseLong(subpathString);
+               } catch (NumberFormatException e) {
+                   throw new Exception("Failed to parse Bip32 path: " + bip32path);
+               }
+           }
+           byte[] subPathBytes = ByteBuffer.allocate(4).putInt((int) subpathInt).array();
+           System.arraycopy(subPathBytes, 0, bytePath, byteIndex, subPathBytes.length);
+           byteIndex += 4;
+       }
+
+       return new Bip32Path(depth, bytePath, bip32path);
+   }
   
     public byte[] parseInitiateSecureChannel(APDUResponse rapdu){
     
@@ -92,15 +174,73 @@ public class SatochipParser{
             offset+=sig2Size;
 
             byte[] pubkey= recoverPubkey(msg1, sig1, coordx);
-
-            // todo: recover from si2
-
+            
             return pubkey;
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
-   
     }
+
+
+    public List<byte[]> parseInitiateSecureChannelGetPossibleAuthentikeys(APDUResponse rapdu){
+    
+        try{
+            byte[] data= rapdu.getData();
+            int dataLength = data.length;
+            logger.info("SATOCHIPLIB: parseInitiateSecureChannel data: " + toHexString(data));
+
+            // data= [coordxSize | coordx | sig1Size | sig1 |  sig2Size | sig2 | coordxSize(optional) | coordxAuthentikey(optional)]
+            int offset=0;
+            int coordxSize= 256*data[offset++] + data[offset++];
+
+            byte[] coordx= new byte[coordxSize];
+            System.arraycopy(data, offset, coordx, 0, coordxSize);
+            offset+=coordxSize;
+
+            // msg1 is [coordx_size | coordx]
+            byte[] msg1= new byte[2+coordxSize];
+            System.arraycopy(data, 0, msg1, 0, msg1.length);
+
+            int sig1Size= 256*data[offset++] + data[offset++];
+            byte[] sig1= new byte[sig1Size];
+            System.arraycopy(data, offset, sig1, 0, sig1Size);
+            offset+=sig1Size;
+
+            // msg2 is [coordxSize | coordx | sig1Size | sig1]
+            byte[] msg2= new byte[2+coordxSize + 2 + sig1Size];
+            System.arraycopy(data, 0, msg2, 0, msg2.length);
+
+            int sig2Size= 256*data[offset++] + data[offset++];
+            byte[] sig2= new byte[sig2Size];
+            System.arraycopy(data, offset, sig2, 0, sig2Size);
+            offset+=sig2Size;
+
+            // if authentikey coordx are available
+            // (currently only for Seedkeeper v0.2 and higher)
+            if (dataLength>offset+1){
+                int coordxAuthentikeySize = 256*data[offset++] + data[offset++];
+                if (dataLength>offset+coordxAuthentikeySize){}
+                byte[] coordxAuthentikey= new byte[coordxAuthentikeySize];
+                System.arraycopy(data, offset, coordxAuthentikey, 0, coordxAuthentikeySize);
+
+                byte[] authentikey= recoverPubkey(msg2, sig2, coordxAuthentikey);
+                List<byte[]> possibleAuthentikeys = new ArrayList<byte[]>();
+                possibleAuthentikeys.add(authentikey);
+                return possibleAuthentikeys;
+
+            } else {
+                // if authentikey coordx is not provided, two possible pubkeys can be recovered as par ECDSA properties
+                // recover all possible authentikeys from msg2, sig2
+                List<byte[]> possibleAuthentikeys = recoverPossiblePubkeys(msg2, sig2);
+
+                return possibleAuthentikeys;
+            }
+
+        } catch(Exception e) {
+            throw new RuntimeException("Exception in parseInitiateSecureChannelGetPossibleAuthentikeys:", e);
+        }
+    }
+
   
     public byte[] parseBip32GetAuthentikey(APDUResponse rapdu){
         try{
@@ -144,9 +284,8 @@ public class SatochipParser{
             throw new RuntimeException("Exception during Authentikey recovery", e);
         }
     }
-  
-    public byte[] parseBip32GetExtendedKey(APDUResponse rapdu){
-    
+    public byte[][] parseBip32GetExtendedKey(APDUResponse rapdu){//todo: return a wrapped
+
         try{
             byte[] data= rapdu.getData();
             logger.info("SATOCHIPLIB: parseBip32GetExtendedKey data: " + toHexString(data));
@@ -183,13 +322,10 @@ public class SatochipParser{
             byte[] pubkey= recoverPubkey(msg1, sig1, coordx);
 
             // todo: recover from si2
-
-            return pubkey;
-      
+            return new byte[][] {pubkey, chaincode};
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
-   
     }
   
     public byte[] parseSatodimeGetPubkey(APDUResponse rapdu){
@@ -407,6 +543,47 @@ public class SatochipParser{
             }
         }
         return null; // could not recover pubkey
+    } 
+
+    public List<byte[]> recoverPossiblePubkeys(byte[] msg, byte[] sig) {
+        List<byte[]> pubkeys = new ArrayList<byte[]>();
+
+        // convert msg to hash
+        MessageDigest md;
+        try {
+            md = MessageDigest.getInstance("SHA256", "BC");
+        } catch(Exception e) {
+            throw new RuntimeException("Is BouncyCastle in the classpath?", e);
+        }
+        byte[] hash= md.digest(msg);
+        
+        // convert sig array to big integer
+        byte[] sigCompact= parseToCompactSignature(sig);
+        byte[] r= new byte[32];
+        System.arraycopy(sigCompact, 0, r, 0, 32);
+        byte[] s= new byte[32];
+        System.arraycopy(sigCompact, 32, s, 0, 32);
+        
+        BigInteger[] sigBig= new BigInteger[2] ;
+        sigBig[0]= new BigInteger(1, r);
+        sigBig[1]= new BigInteger(1, s);
+        
+        ECPoint point=null;
+        for (int recid=0; recid<4; recid++){
+            point= Recover(hash, sigBig, recid, false);
+            if (point==null){
+                logger.warning("SATOCHIPLIB: null point for recid: " + recid);
+                continue;
+            }
+
+            // convert to byte[]
+            byte[] pubkey= point.getEncoded(false); // uncompressed
+            
+            // add to list
+            pubkeys.add(pubkey);
+            logger.warning("SATOCHIPLIB: Found potential pubkey: " + toHexString(pubkey));
+        }
+        return pubkeys;
     } 
   
     public byte[] parseToCompactSignature(byte[] sigIn){
