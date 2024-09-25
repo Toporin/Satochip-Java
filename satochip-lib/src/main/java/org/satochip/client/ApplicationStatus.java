@@ -96,7 +96,10 @@ public class ApplicationStatus {
     public byte getPin0RemainingCounter(){
         return PIN0_remaining_tries;
     }
-  
+    public byte getPuk0RemainingCounter(){
+        return PUK0_remaining_tries;
+    }
+
     public String toString(){
         String status_info=   "setup_done: " + setup_done + "\n"+
                                   "is_seeded: " + is_seeded + "\n"+

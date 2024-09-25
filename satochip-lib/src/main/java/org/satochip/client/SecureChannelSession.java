@@ -1,12 +1,8 @@
 package org.satochip.client;
 
 import org.satochip.io.APDUCommand;
-import org.satochip.io.APDUException;
 import org.satochip.io.APDUResponse;
-import org.satochip.io.CardChannel;
 
-import org.bouncycastle.crypto.engines.AESEngine;
-//import org.bouncycastle.crypto.macs.CBCBlockCipherMac;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.interfaces.ECPublicKey;
@@ -19,11 +15,8 @@ import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.IOException;
 import java.security.*;
-import java.util.Arrays;
 import java.util.logging.Logger;
-import java.util.logging.Level;
 import java.nio.ByteBuffer;
 
 /**

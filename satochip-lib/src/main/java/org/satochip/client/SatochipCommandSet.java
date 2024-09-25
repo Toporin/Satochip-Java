@@ -1073,6 +1073,43 @@ public class SatochipCommandSet {
         return header;
     }
 
+    public APDUResponse cardSendResetCommand() throws Exception {
+        byte[] data = new byte[]{};
+
+        APDUCommand plainApdu = new APDUCommand(
+                0xB0,
+                INS_RESET_TO_FACTORY,
+                0x00,
+                0x00,
+                data
+        );
+
+        logger.warning("SATOCHIPLIB: C-APDU cardSendResetCommand:" + plainApdu.toHexString());
+//        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        APDUResponse respApdu = apduChannel.send(plainApdu);
+        logger.warning("SATOCHIPLIB: R-APDU cardSendResetCommand:" + respApdu.toHexString());
+
+        return respApdu;
+    }
+
+    public APDUResponse cardUnblockPin(
+            byte[] puk
+    ) throws Exception {
+        APDUCommand plainApdu = new APDUCommand(
+                0xB0,
+                INS_UNBLOCK_PIN,
+                0x00,
+                0x00,
+                puk
+        );
+
+        logger.info("SATOCHIPLIB: C-APDU cardUnblockPin:" + plainApdu.toHexString());
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + respApdu.toHexString());
+
+        return respApdu;
+    }
+
     public List<SeedkeeperSecretHeader> seedkeeperGenerateRandomSecret(
             SeedkeeperSecretType stype,
             byte subtype,
@@ -1346,7 +1383,6 @@ public class SatochipCommandSet {
         List<Byte> secretBytes = new ArrayList<>();
         int sigSize = 0;
         List<Byte> sigBytes = new ArrayList<>();
-//        byte[] sigBytes;
         while (true) {
             plainApdu = new APDUCommand(
                     0xB0,
@@ -1808,7 +1844,6 @@ public class SatochipCommandSet {
         try{
             // load certs
             InputStream isCa = this.getClass().getClassLoader().getResourceAsStream("cert/ca.cert");  
-            //TODO: load subca cert depending on card type
             InputStream isSubca;
             if (cardType.equals("satochip")) {
                 isSubca = this.getClass().getClassLoader().getResourceAsStream("cert/subca-satochip.cert");
