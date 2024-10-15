@@ -453,7 +453,8 @@ public class SatochipCommandSet {
         data[offset++] = (byte) 0x01;
 
         APDUCommand plainApdu = new APDUCommand(cla, ins, p1, p2, data);
-        logger.info("SATOCHIPLIB: C-APDU cardSetup:" + plainApdu.toHexString());
+        //logger.info("SATOCHIPLIB: C-APDU cardSetup:" + plainApdu.toHexString());
+        logger.info("SATOCHIPLIB: C-APDU cardSetup");
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardSetup:" + respApdu.toHexString());
 
@@ -468,6 +469,24 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    public APDUResponse cardSendResetCommand() throws Exception {
+        byte[] data = new byte[]{};
+
+        APDUCommand plainApdu = new APDUCommand(
+                0xB0,
+                INS_RESET_TO_FACTORY,
+                0x00,
+                0x00,
+                data
+        );
+
+        // reset command must be sent in clear, without other commands interferring between reset commands
+        logger.warning("SATOCHIPLIB: C-APDU cardSendResetCommand:" + plainApdu.toHexString());
+        APDUResponse respApdu = apduChannel.send(plainApdu);
+        logger.warning("SATOCHIPLIB: R-APDU cardSendResetCommand:" + respApdu.toHexString());
+
+        return respApdu;
+    }
 
     /****************************************
      *             PIN MGMT                  *
@@ -485,9 +504,50 @@ public class SatochipCommandSet {
         }
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_VERIFY_PIN, 0x00, 0x00, pin0);
-        logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN:" + plainApdu.toHexString());
+        //logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN:" + plainApdu.toHexString());
+        logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN");
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardVerifyPIN:" + respApdu.toHexString());
+
+        return respApdu;
+    }
+
+    public Boolean changeCardPin(byte[] oldPin, byte[] newPin) throws Exception {
+        logger.info("SATOCHIPLIB: changeCardPin START");
+
+        byte[] data = new byte[1 + oldPin.length + 1 + newPin.length];
+        data[0] = (byte) oldPin.length;
+        System.arraycopy(oldPin, 0, data, 1, oldPin.length);
+        data[1 + oldPin.length] = (byte) newPin.length;
+        System.arraycopy(newPin, 0, data, 2 + oldPin.length, newPin.length);
+        setPin0(newPin);
+        try{
+            APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHANGE_PIN, 0x00, 0x00, data);
+            //logger.info("SATOCHIPLIB: C-APDU changeCardPin:"+ plainApdu.toHexString());
+            logger.info("SATOCHIPLIB: C-APDU changeCardPin");
+            APDUResponse respApdu = this.cardTransmit(plainApdu);
+            logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ respApdu.toHexString());
+            int sw = respApdu.getSw();
+            return sw == 0x9000;
+        } catch (Exception e){
+            setPin0(oldPin);
+            return false;
+        }
+    }
+
+    public APDUResponse cardUnblockPin(byte[] puk) throws Exception {
+        APDUCommand plainApdu = new APDUCommand(
+                0xB0,
+                INS_UNBLOCK_PIN,
+                0x00,
+                0x00,
+                puk
+        );
+
+        //logger.info("SATOCHIPLIB: C-APDU cardUnblockPin:" + plainApdu.toHexString());
+        logger.info("SATOCHIPLIB: C-APDU cardUnblockPin");
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + respApdu.toHexString());
 
         return respApdu;
     }
@@ -500,7 +560,8 @@ public class SatochipCommandSet {
         //TODO: check seed (length...)
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_IMPORT_SEED, masterseed.length, 0x00, masterseed);
 
-        logger.info("SATOCHIPLIB: C-APDU cardBip32ImportSeed:" + plainApdu.toHexString());
+        //logger.info("SATOCHIPLIB: C-APDU cardBip32ImportSeed:" + plainApdu.toHexString());
+        logger.info("SATOCHIPLIB: C-APDU cardBip32ImportSeed");
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardBip32ImportSeed:" + respApdu.toHexString());
 
@@ -1073,43 +1134,6 @@ public class SatochipCommandSet {
         return header;
     }
 
-    public APDUResponse cardSendResetCommand() throws Exception {
-        byte[] data = new byte[]{};
-
-        APDUCommand plainApdu = new APDUCommand(
-                0xB0,
-                INS_RESET_TO_FACTORY,
-                0x00,
-                0x00,
-                data
-        );
-
-        logger.warning("SATOCHIPLIB: C-APDU cardSendResetCommand:" + plainApdu.toHexString());
-//        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        APDUResponse respApdu = apduChannel.send(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU cardSendResetCommand:" + respApdu.toHexString());
-
-        return respApdu;
-    }
-
-    public APDUResponse cardUnblockPin(
-            byte[] puk
-    ) throws Exception {
-        APDUCommand plainApdu = new APDUCommand(
-                0xB0,
-                INS_UNBLOCK_PIN,
-                0x00,
-                0x00,
-                puk
-        );
-
-        logger.info("SATOCHIPLIB: C-APDU cardUnblockPin:" + plainApdu.toHexString());
-        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + respApdu.toHexString());
-
-        return respApdu;
-    }
-
     public List<SeedkeeperSecretHeader> seedkeeperGenerateRandomSecret(
             SeedkeeperSecretType stype,
             byte subtype,
@@ -1269,7 +1293,8 @@ public class SatochipCommandSet {
                     chunk
             );
 
-            logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret:" + plainApdu.toHexString());
+            //logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret:" + plainApdu.toHexString());
+            logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret");
             respApdu = this.cardTransmit(plainApdu);
             logger.warning("SATOCHIPLIB: R-APDU seedkeeperImportSecret:" + respApdu.toHexString());
             respApdu.checkOK();
@@ -1298,7 +1323,8 @@ public class SatochipCommandSet {
                 chunk
         );
 
-        logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret:" + plainApdu.toHexString());
+        //logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret:" + plainApdu.toHexString());
+        logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret");
         respApdu = this.cardTransmit(plainApdu);
         logger.warning("SATOCHIPLIB: R-APDU seedkeeperImportSecret:" + respApdu.toHexString());
         respApdu.checkOK();
@@ -1391,9 +1417,10 @@ public class SatochipCommandSet {
                     (byte) 0x02,
                     new byte[0]
             );
+            //logger.info("SATOCHIPLIB: C-APDU seedkeeperExportSecret:" + plainApdu.toHexString());
             logger.info("SATOCHIPLIB: C-APDU seedkeeperExportSecret:" + plainApdu.toHexString());
             respApdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU seedkeeperExportSecret:" + respApdu.toHexString());
+            logger.info("SATOCHIPLIB: R-APDU seedkeeperExportSecret");
             respApdu.checkOK();
 
 
@@ -1690,29 +1717,6 @@ public class SatochipCommandSet {
         int sw = respApdu.getSw();
         return sw == 0x9000;
     }
-
-    public Boolean changeCardPin(byte[] oldPin, byte[] newPin) throws Exception {
-        logger.info("SATOCHIPLIB: changeCardPin START");
-
-        byte[] data = new byte[1 + oldPin.length + 1 + newPin.length];
-        data[0] = (byte) oldPin.length;
-        System.arraycopy(oldPin, 0, data, 1, oldPin.length);
-        data[1 + oldPin.length] = (byte) newPin.length;
-        System.arraycopy(newPin, 0, data, 2 + oldPin.length, newPin.length);
-        setPin0(newPin);
-        try{
-            APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHANGE_PIN, 0x00, 0x00, data);
-            logger.info("SATOCHIPLIB: C-APDU changeCardPin:"+ plainApdu.toHexString());
-            APDUResponse respApdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ respApdu.toHexString());
-            int sw = respApdu.getSw();
-            return sw == 0x9000;
-        } catch (Exception e){
-            setPin0(oldPin);
-            return false;
-        }
-    }
-
 
     /****************************************
     *            PKI commands              *
