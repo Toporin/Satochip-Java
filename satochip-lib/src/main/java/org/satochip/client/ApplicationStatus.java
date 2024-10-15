@@ -119,12 +119,12 @@ public class ApplicationStatus {
     }
 
     public String getCardVersionString() {
-        val versionString =
+        String version_string =
             protocol_major_version + "." + 
             protocol_minor_version + "-" +
             applet_major_version + "." + 
-            applet_minor_version
-        return versionString
+            applet_minor_version;
+        return version_string;
     }
 
     public int getProtocolVersion() {
