@@ -118,6 +118,15 @@ public class ApplicationStatus {
                 ((int) applet_minor_version);
     }
 
+    public String getCardVersionString() {
+        val versionString =
+            protocol_major_version + "." + 
+            protocol_minor_version + "-" +
+            applet_major_version + "." + 
+            applet_minor_version
+        return versionString
+    }
+
     public int getProtocolVersion() {
         return protocol_version;
     }
