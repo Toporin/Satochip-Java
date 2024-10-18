@@ -496,23 +496,51 @@ public class SatochipCommandSet {
         System.arraycopy(pin, 0, this.pin0, 0, pin.length);
     }
 
-    public APDUResponse cardVerifyPIN() {
+    public APDUResponse cardVerifyPIN(byte[] pin) throws Exception {
 
-        if (pin0 == null) {
-            // TODO: specific exception
-            throw new RuntimeException("PIN required!");
+        byte[] mypin = pin;
+        if (mypin == null){
+            if (pin0 == null) {
+                // TODO: specific exception
+                throw new RuntimeException("PIN required!");
+            }
+            mypin = pin0;
         }
 
-        APDUCommand plainApdu = new APDUCommand(0xB0, INS_VERIFY_PIN, 0x00, 0x00, pin0);
-        //logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN:" + plainApdu.toHexString());
-        logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN");
-        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardVerifyPIN:" + respApdu.toHexString());
+        try {
+            APDUCommand plainApdu = new APDUCommand(0xB0, INS_VERIFY_PIN, 0x00, 0x00, mypin);
+            //logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN:" + plainApdu.toHexString());
+            logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN");
+            APDUResponse rapdu = this.cardTransmit(plainApdu);
+            logger.info("SATOCHIPLIB: R-APDU cardVerifyPIN:" + rapdu.toHexString());
 
-        return respApdu;
+            rapdu.checkAuthOK();
+            this.pin0 = mypin; // cache new pin
+            return rapdu;
+
+        } catch (WrongPINException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (WrongPINLegacyException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (BlockedPINException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (APDUException e){
+            this.pin0 = null;
+            throw e;
+        } catch (Exception e){
+            this.pin0 = null;
+            throw e;
+        }
     }
 
-    public Boolean changeCardPin(byte[] oldPin, byte[] newPin) throws Exception {
+    public APDUResponse cardVerifyPIN() throws Exception {
+        return cardVerifyPIN(this.pin0);
+    }
+
+    public APDUResponse cardChangePin(byte[] oldPin, byte[] newPin) throws Exception {
         logger.info("SATOCHIPLIB: changeCardPin START");
 
         byte[] data = new byte[1 + oldPin.length + 1 + newPin.length];
@@ -525,13 +553,27 @@ public class SatochipCommandSet {
             APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHANGE_PIN, 0x00, 0x00, data);
             //logger.info("SATOCHIPLIB: C-APDU changeCardPin:"+ plainApdu.toHexString());
             logger.info("SATOCHIPLIB: C-APDU changeCardPin");
-            APDUResponse respApdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ respApdu.toHexString());
-            int sw = respApdu.getSw();
-            return sw == 0x9000;
+            APDUResponse rapdu = this.cardTransmit(plainApdu);
+            logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ rapdu.toHexString());
+            
+            rapdu.checkAuthOK();
+            return rapdu;
+
+        } catch (WrongPINException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (WrongPINLegacyException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (BlockedPINException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (APDUException e){
+            this.pin0 = null;
+            throw e;
         } catch (Exception e){
-            setPin0(oldPin);
-            return false;
+            this.pin0 = null;
+            throw e;
         }
     }
 
@@ -544,12 +586,35 @@ public class SatochipCommandSet {
                 puk
         );
 
-        //logger.info("SATOCHIPLIB: C-APDU cardUnblockPin:" + plainApdu.toHexString());
-        logger.info("SATOCHIPLIB: C-APDU cardUnblockPin");
-        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + respApdu.toHexString());
+        try{
+            //logger.info("SATOCHIPLIB: C-APDU cardUnblockPin:" + plainApdu.toHexString());
+            logger.info("SATOCHIPLIB: C-APDU cardUnblockPin");
+            APDUResponse rapdu = this.cardTransmit(plainApdu);
+            logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + rapdu.toHexString());
 
-        return respApdu;
+            rapdu.checkAuthOK();
+            return rapdu;
+
+        } catch (WrongPINException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (WrongPINLegacyException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (BlockedPINException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (ResetToFactoryException e) {
+            this.pin0 = null;
+            throw e;
+        } catch (APDUException e){
+            this.pin0 = null;
+            throw e;
+        } catch (Exception e){
+            this.pin0 = null;
+            throw e;
+        }
+        
     }
 
     /****************************************

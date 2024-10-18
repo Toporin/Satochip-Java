@@ -13,6 +13,9 @@ public class APDUResponse {
   public static final int SW_REFERENCED_DATA_NOT_FOUND = 0x6A88;
   public static final int SW_CONDITIONS_OF_USE_NOT_SATISFIED = 0x6985; // applet may be already installed
   public static final int SW_WRONG_PIN_MASK = 0x63C0;
+  public static final int SW_WRONG_PIN_LEGACY = 0x9C02;
+  public static final int SW_BLOCKED_PIN = 0x9C0C;
+  public static final int SW_FACTORY_RESET = 0xFF00;
   public static final String HEXES = "0123456789ABCDEF";
   
   private byte[] apdu;
@@ -136,9 +139,15 @@ public class APDUResponse {
    * @throws WrongPINException wrong PIN
    * @throws APDUException unexpected response
    */
-  public APDUResponse checkAuthOK() throws WrongPINException, APDUException {
+  public APDUResponse checkAuthOK() throws WrongPINException, WrongPINLegacyException, BlockedPINException, APDUException {
     if ((this.sw & SW_WRONG_PIN_MASK) == SW_WRONG_PIN_MASK) {
       throw new WrongPINException(sw2 & 0x0F);
+    } else if (this.sw == SW_WRONG_PIN_LEGACY) {
+      throw new WrongPINLegacyException();
+    } else if (this.sw == SW_BLOCKED_PIN) {
+      throw new BlockedPINException();
+    } else if (this.sw == SW_FACTORY_RESET) {
+      throw new ResetToFactoryException();
     } else {
       return checkOK();
     }

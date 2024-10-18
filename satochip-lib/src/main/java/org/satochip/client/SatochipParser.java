@@ -172,7 +172,7 @@ public class SatochipParser{
             
             return pubkey;
         } catch(Exception e) {
-            throw new RuntimeException("Is BouncyCastle in the classpath?", e);
+            throw new RuntimeException("Exception in parseInitiateSecureChannel: ", e);
         }
     }
 

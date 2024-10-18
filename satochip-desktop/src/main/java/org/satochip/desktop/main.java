@@ -17,7 +17,7 @@ import java.io.*;
 import java.nio.charset.Charset;
 
 class Main {
-    public static void main(String[] args) throws CardException, IOException {
+    public static void main(String[] args) throws CardException, IOException, Exception {
         System.out.println("Hello World!"); 
 				
 		TerminalFactory tf = TerminalFactory.getDefault();
