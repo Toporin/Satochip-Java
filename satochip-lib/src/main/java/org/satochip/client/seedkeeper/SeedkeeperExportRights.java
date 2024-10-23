@@ -22,6 +22,6 @@ public enum SeedkeeperExportRights {
                 return type;
             }
         }
-        throw new IllegalArgumentException("Unknown raw value: " + rawValue);
+        return SeedkeeperExportRights.EXPORT_PLAINTEXT_ALLOWED; // default
     }
 }
