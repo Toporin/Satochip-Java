@@ -1,6 +1,7 @@
 package org.satochip.client.seedkeeper;
 
 public enum SeedkeeperSecretOrigin {
+    UNKNOWN((byte) 0x00),
     PLAIN_IMPORT((byte) 0x01),
     ENCRYPTED_IMPORT((byte) 0x02),
     GENERATED_ON_CARD((byte) 0x03);
@@ -21,6 +22,6 @@ public enum SeedkeeperSecretOrigin {
                 return type;
             }
         }
-        throw new IllegalArgumentException("Unknown raw value: " + rawValue);
+        return SeedkeeperSecretOrigin.UNKNOWN;
     }
 }

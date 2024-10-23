@@ -34,6 +34,6 @@ public enum SeedkeeperSecretType {
                 return type;
             }
         }
-        throw new IllegalArgumentException("Unknown raw value: " + rawValue);
+        return SeedkeeperSecretType.DEFAULT_TYPE; 
     }
 }

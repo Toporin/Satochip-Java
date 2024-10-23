@@ -6,7 +6,6 @@ import org.satochip.io.APDUResponse;
 import java.util.Arrays;
 import java.nio.ByteBuffer;
 import java.util.logging.Logger;
-import java.util.logging.Level;
 
 import org.bouncycastle.crypto.digests.SHA1Digest;
 import org.bouncycastle.crypto.macs.HMac;

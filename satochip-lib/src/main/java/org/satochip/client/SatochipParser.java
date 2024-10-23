@@ -1,9 +1,6 @@
 package org.satochip.client;
 
-import org.satochip.io.APDUCommand;
-import org.satochip.io.APDUException;
 import org.satochip.io.APDUResponse;
-import org.satochip.io.CardChannel;
 
 import org.bouncycastle.asn1.*;
 import org.bouncycastle.asn1.x9.X9ECParameters;
@@ -22,13 +19,11 @@ import java.security.MessageDigest;
 import java.math.BigInteger;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Base64;
 import java.util.logging.Logger;
-import java.util.logging.Level;
 
 public class SatochipParser{
     
@@ -177,7 +172,7 @@ public class SatochipParser{
             
             return pubkey;
         } catch(Exception e) {
-            throw new RuntimeException("Is BouncyCastle in the classpath?", e);
+            throw new RuntimeException("Exception in parseInitiateSecureChannel: ", e);
         }
     }
 
