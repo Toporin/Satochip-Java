@@ -651,9 +651,9 @@ public class SatochipCommandSet {
         }
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_RESET_SEED, p1, 0x00, data);
-        logger.info("SATOCHIPLIB: C-APDU cardSignTransactionHash:" + plainApdu.toHexString());
+        logger.info("SATOCHIPLIB: C-APDU cardResetSeed:" + plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardSignTransactionHash:" + respApdu.toHexString());
+        logger.info("SATOCHIPLIB: R-APDU cardResetSeed:" + respApdu.toHexString());
         // TODO: check SW code for particular status
 
         return respApdu;
@@ -668,7 +668,7 @@ public class SatochipCommandSet {
 
     public byte[][] cardBip32GetExtendedKey(String stringPath, Byte flags, Integer sid) throws Exception {
         logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey");
-        Bip32Path parsedPath = parser.parseBip32PathToBytes(stringPath);
+        Bip32Path parsedPath = new Bip32Path(stringPath);
         if (parsedPath.getDepth() > 10) {
             throw new Exception("Path length exceeds maximum depth of 10: " + parsedPath.getDepth());
         }
@@ -777,7 +777,7 @@ public class SatochipCommandSet {
             childPubkey = parser.compressPubKey(extendedKey);
         }
 
-        Bip32Path parsedPath = parser.parseBip32PathToBytes(path);
+        Bip32Path parsedPath = new Bip32Path(path);
         int depth = parsedPath.getDepth();
         byte[] bytePath = parsedPath.getBytes();
         byte[] fingerprintBytes = new byte[4];
@@ -785,7 +785,7 @@ public class SatochipCommandSet {
 
         if (depth > 0) {
             // Get parent info
-            String parentPath = parser.getBip32PathParentPath(path);
+            String parentPath = Bip32Path.getBip32PathParentPath(path);
             logger.warning("SATOCHIPLIB: cardBip32GetXpub: parentPathString: "+ parentPath);
 
             cardBip32GetExtendedKey(parentPath, optionFlags, sid);

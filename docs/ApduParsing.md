@@ -30,36 +30,6 @@ public class SatochipParser {
 
 ## Core Methods
 
-### BIP32 Path Operations
-
-#### `parseBip32PathToBytes(String bip32path)`
-Converts a BIP32 derivation path string to its byte representation.
-
-**Parameters:**
-- `bip32path` (String): BIP32 path (e.g., "m/44'/0'/0'/0/0")
-
-**Returns:**
-- `Bip32Path`: Object containing depth and byte representation
-
-**Throws:**
-- `Exception`: For invalid path format
-
-**Example:**
-```java
-SatochipParser parser = new SatochipParser();
-Bip32Path path = parser.parseBip32PathToBytes("m/44'/0'/0'/0/0");
-
-int depth = path.getDepth();        // 5
-byte[] pathBytes = path.getBytes(); // [0x8000002C, 0x80000000, 0x80000000, 0x00000000, 0x00000000]
-```
-
-**Path Format Rules:**
-- Starts with "m" for master key (optional)
-- Components separated by "/"
-- Hardened derivation indicated by "'" or "h" suffix
-- Maximum 10 components supported by Satochip.
-- Each component is a 32-bit integer converted to 4 bytes for the card.
-
 ### APDU Response Parsing
 
 #### `parseInitiateSecureChannel(APDUResponse rapdu)`
@@ -369,14 +339,11 @@ if (s2.compareTo(HALF_CURVE_ORDER) > 0) {
 // 1. Create parser
 SatochipParser parser = new SatochipParser();
 
-// 2. Parse BIP32 path
-Bip32Path path = parser.parseBip32PathToBytes("m/44'/0'/0'/0/0");
-
-// 3. Send command and parse response
+// 2. Send command and parse response
 APDUResponse response = commandSet.cardBip32GetExtendedKey(path);
 byte[][] extendedKey = parser.parseBip32GetExtendedKey(response);
 
-// 4. Verify signature if needed
+// 3. Verify signature if needed
 boolean isValid = parser.verifySig(message, signature, extendedKey[0]);
 ```
 

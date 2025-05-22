@@ -1,5 +1,9 @@
 package org.satochip.client;
 
+import java.util.Arrays;
+import java.util.logging.Logger;
+import java.nio.ByteBuffer;
+
 /**
  * Represents a BIP32 hierarchical deterministic wallet derivation path.
  *
@@ -54,6 +58,8 @@ package org.satochip.client;
  */
 public class Bip32Path {
 
+    private static final Logger logger = Logger.getLogger("org.satochip.client");
+
     /**
      * The number of derivation levels in this path.
      * <p>Each level represents one step in the hierarchical derivation process.
@@ -102,7 +108,7 @@ public class Bip32Path {
      * @param bytes the binary encoded path data where each 4-byte segment represents
      *              one derivation level in big-endian format. The array length should
      *              equal depth * 4. Must not be null.
-     * @param bip32Path the human-readable string representation of the path in standard
+     * @param stringPath the human-readable string representation of the path in standard
      *                  BIP32 format (e.g., "m/44'/0'/0'/0/0"). May be null if only
      *                  binary representation is needed.
      *
@@ -113,11 +119,84 @@ public class Bip32Path {
      * @see #getBytes()
      * @see #getBip32Path()
      */
-    public Bip32Path(Integer depth, byte[] bytes, String bip32Path) {
+    public Bip32Path(Integer depth, byte[] bytes, String stringPath) {
         this.depth = depth;
         this.bytes = bytes;
-        this.bip32Path = bip32Path;
+        this.bip32Path = stringPath;
     }
+
+    /**
+     * Constructs a new Bip32Path from its String representation.
+     *
+     * <p>Parses a hierarchical deterministic (HD) wallet path string according to BIP32
+     * standards and converts it to the binary format expected by hardware wallets.
+     * Supports both hardened (indicated by ' or h suffix) and non-hardened derivation.</p>
+     *
+     * <p><strong>Path Format Examples:</strong></p>
+     * <ul>
+     *   <li>{@code "m/44'/0'/0'/0/0"} - Standard Bitcoin receive address</li>
+     *   <li>{@code "m/49'/0'/0'/0/0"} - P2SH-wrapped SegWit address</li>
+     *   <li>{@code "m/84'/0'/0'/0/0"} - Native SegWit address</li>
+     *   <li>{@code "44'/0'/0'/0/0"} - Relative path (m/ prefix optional)</li>
+     * </ul>
+     *
+     * <p><strong>Constraints:</strong></p>
+     * <ul>
+     *   <li>Maximum depth: 10 components</li>
+     *   <li>Each component: 31-bit unsigned integer</li>
+     *   <li>Hardened derivation: component value + 0x80000000</li>
+     * </ul>
+     *
+     * @param stringPath the BIP32 path string to parse (e.g., "m/44'/0'/0'/0/0")
+     * @return Bip32Path object containing the depth and 4-byte encoded path components
+     * @throws Exception if the path format is invalid, too long, or contains invalid numbers
+     *
+     * @since 0.0.4
+     * @see <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP32 Specification</a>
+     * @see Bip32Path
+     */
+    public Bip32Path(String stringPath) throws Exception {
+        logger.info("SATOCHIPLIB: parseBip32PathToBytes: Start ");
+
+        String[] splitPath = stringPath.split("/");
+        if (splitPath[0].equals("m")) {
+            splitPath = Arrays.copyOfRange(splitPath, 1, splitPath.length);
+        }
+
+        int depth = splitPath.length;
+        byte[] bytePath = new byte[depth * 4];
+
+        int byteIndex = 0;
+        for (int index = 0; index < depth; index++) {
+            String subpathString = splitPath[index];
+            long subpathInt;
+            if (subpathString.endsWith("'") || subpathString.endsWith("h")) {
+                subpathString = subpathString.replace("'", "").replace("h", "");
+                try {
+                    long tmp = Long.parseLong(subpathString);
+                    subpathInt = tmp + 0x80000000L;
+                } catch (NumberFormatException e) {
+                    throw new Exception("Failed to parse Bip32 path: " + stringPath);
+                }
+            } else {
+                try {
+                    subpathInt = Long.parseLong(subpathString);
+                } catch (NumberFormatException e) {
+                    throw new Exception("Failed to parse Bip32 path: " + stringPath);
+                }
+            }
+            byte[] subPathBytes = ByteBuffer.allocate(4).putInt((int) subpathInt).array();
+            System.arraycopy(subPathBytes, 0, bytePath, byteIndex, subPathBytes.length);
+            byteIndex += 4;
+        }
+
+        //return new Bip32Path(depth, bytePath, stringPath);
+        this.depth = depth;
+        this.bytes = bytePath;
+        this.bip32Path = stringPath;
+    }
+
+
 
     /**
      * Returns the number of derivation levels in this BIP32 path.
@@ -227,4 +306,31 @@ public class Bip32Path {
     public String getBip32Path() {
         return bip32Path;
     }
+
+
+    /**
+     * Determines the parent path for a given BIP32 derivation path.
+     *
+     * <p>Removes the last component from a BIP32 path string to get the parent path.
+     * For example, "m/44'/0'/0'/0/5" becomes "m/44'/0'/0'/0".</p>
+     *
+     * @param bip32path the BIP32 path string to process
+     * @return the parent path string with the last component removed
+     * @throws Exception if the path is invalid or has no parent (too short)
+     *
+     * @see #parseBip32PathToBytes(String)
+     */
+    public static String getBip32PathParentPath(String bip32path) throws Exception {
+        System.out.println("In getBip32PathParentPath");
+        String[] splitPath = bip32path.split("/");
+        if (splitPath.length <= 1) {
+            throw new Exception("Invalid BIP32 path: " + bip32path);
+        }
+        String[] parentPathArray = Arrays.copyOf(splitPath, splitPath.length - 1);
+        String parentPath = String.join("/", parentPathArray);
+        return parentPath;
+    }
+
+
+
 }

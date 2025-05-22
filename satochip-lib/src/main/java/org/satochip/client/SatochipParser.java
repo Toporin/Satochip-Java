@@ -14,7 +14,6 @@ import org.bouncycastle.math.ec.ECPoint;
 import org.bouncycastle.math.ec.custom.sec.SecP256K1Curve;
 import org.bouncycastle.util.Properties;
 
-import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.math.BigInteger;
 import java.io.IOException;
@@ -135,30 +134,6 @@ public class SatochipParser{
      **************************************** */
 
     /**
-     * Determines the parent path for a given BIP32 derivation path.
-     *
-     * <p>Removes the last component from a BIP32 path string to get the parent path.
-     * For example, "m/44'/0'/0'/0/5" becomes "m/44'/0'/0'/0".</p>
-     *
-     * @param bip32path the BIP32 path string to process
-     * @return the parent path string with the last component removed
-     * @throws Exception if the path is invalid or has no parent (too short)
-     *
-     * @since 0.0.4
-     * @see #parseBip32PathToBytes(String)
-     */
-    public String getBip32PathParentPath(String bip32path) throws Exception {
-        System.out.println("In getBip32PathParentPath");
-        String[] splitPath = bip32path.split("/");
-        if (splitPath.length <= 1) {
-            throw new Exception("Invalid BIP32 path: " + bip32path);
-        }
-        String[] parentPathArray = Arrays.copyOf(splitPath, splitPath.length - 1);
-        String parentPath = String.join("/", parentPathArray);
-        return parentPath;
-    }
-
-    /**
      * Parses BIP85 entropy from an extended key response.
      *
      * <p>BIP85 (Deterministic Entropy From BIP32 Keychains) allows deriving
@@ -173,11 +148,11 @@ public class SatochipParser{
      * @see <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki">BIP85 Specification</a>
      */
     public byte[][] parseBip85GetExtendedKey(APDUResponse rapdu){
-        logger.warning("SATOCHIPLIB: parseBip85GetExtendedKey: Start ");
+        logger.info("SATOCHIPLIB: parseBip85GetExtendedKey: Start ");
 
         try {
             byte[] data = rapdu.getData();
-            logger.warning("SATOCHIPLIB: parseBip85GetExtendedKey data: " + toHexString(data));
+            logger.info("SATOCHIPLIB: parseBip85GetExtendedKey data: " + toHexString(data));
 
             int entropySize = 256 * (data[0] & 0xFF) + (data[1] & 0xFF);
             byte[] entropyBytes = Arrays.copyOfRange(data, 2, 2 + entropySize);
@@ -186,74 +161,6 @@ public class SatochipParser{
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
-    }
-
-    /**
-     * Converts a BIP32 derivation path string to its binary representation.
-     *
-     * <p>Parses a hierarchical deterministic (HD) wallet path string according to BIP32
-     * standards and converts it to the binary format expected by hardware wallets.
-     * Supports both hardened (indicated by ' or h suffix) and non-hardened derivation.</p>
-     *
-     * <p><strong>Path Format Examples:</strong></p>
-     * <ul>
-     *   <li>{@code "m/44'/0'/0'/0/0"} - Standard Bitcoin receive address</li>
-     *   <li>{@code "m/49'/0'/0'/0/0"} - P2SH-wrapped SegWit address</li>
-     *   <li>{@code "m/84'/0'/0'/0/0"} - Native SegWit address</li>
-     *   <li>{@code "44'/0'/0'/0/0"} - Relative path (m/ prefix optional)</li>
-     * </ul>
-     *
-     * <p><strong>Constraints:</strong></p>
-     * <ul>
-     *   <li>Maximum depth: 10 components</li>
-     *   <li>Each component: 31-bit unsigned integer</li>
-     *   <li>Hardened derivation: component value + 0x80000000</li>
-     * </ul>
-     *
-     * @param bip32path the BIP32 path string to parse (e.g., "m/44'/0'/0'/0/0")
-     * @return Bip32Path object containing the depth and 4-byte encoded path components
-     * @throws Exception if the path format is invalid, too long, or contains invalid numbers
-     *
-     * @since 0.0.4
-     * @see <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP32 Specification</a>
-     * @see Bip32Path
-     */
-    public Bip32Path parseBip32PathToBytes(String bip32path) throws Exception {
-        logger.info("SATOCHIPLIB: parseBip32PathToBytes: Start ");
-
-        String[] splitPath = bip32path.split("/");
-        if (splitPath[0].equals("m")) {
-            splitPath = Arrays.copyOfRange(splitPath, 1, splitPath.length);
-        }
-
-        int depth = splitPath.length;
-        byte[] bytePath = new byte[depth * 4];
-
-        int byteIndex = 0;
-        for (int index = 0; index < depth; index++) {
-            String subpathString = splitPath[index];
-            long subpathInt;
-            if (subpathString.endsWith("'") || subpathString.endsWith("h")) {
-                subpathString = subpathString.replace("'", "").replace("h", "");
-                try {
-                    long tmp = Long.parseLong(subpathString);
-                    subpathInt = tmp + 0x80000000L;
-                } catch (NumberFormatException e) {
-                    throw new Exception("Failed to parse Bip32 path: " + bip32path);
-                }
-            } else {
-                try {
-                    subpathInt = Long.parseLong(subpathString);
-                } catch (NumberFormatException e) {
-                    throw new Exception("Failed to parse Bip32 path: " + bip32path);
-                }
-            }
-            byte[] subPathBytes = ByteBuffer.allocate(4).putInt((int) subpathInt).array();
-            System.arraycopy(subPathBytes, 0, bytePath, byteIndex, subPathBytes.length);
-            byteIndex += 4;
-        }
-
-        return new Bip32Path(depth, bytePath, bip32path);
     }
 
     /**
