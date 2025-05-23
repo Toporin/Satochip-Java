@@ -81,7 +81,7 @@ public class ApplicationStatus {
         }
     }
   
-  // getters
+    // getters
     public boolean isSeeded() {
         return is_seeded;
     }
