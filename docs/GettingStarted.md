@@ -43,11 +43,11 @@ Add NFC permissions to your `AndroidManifest.xml`:
 
 ## Core Architecture
 
-### Packages
+### Libraries
 
-- **`satochip-lib`: main package that handles the Satochip/Satodime/Seedkeeper protocol and APDU exchanges
-- **`satochip-android`: bindings to use the satochip-lib with Android
-- **`satochip-desktop`: bindings to use the satochip-lib with Computer (Windows/Linux/Mac)
+- **`satochip-lib`**: main library that handles the Satochip/Satodime/Seedkeeper protocol and APDU exchanges
+- **`satochip-android`**: bindings to use the satochip-lib with Android
+- **`satochip-desktop`**: bindings to use the satochip-lib with Computer (Windows/Linux/Mac)
 
 ### Key Classes
 
