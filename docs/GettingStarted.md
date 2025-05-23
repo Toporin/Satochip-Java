@@ -17,8 +17,8 @@ Satochip and Seedkeeper require a user PIN to access most card functionalities. 
 2. [Core Architecture](#core-architecture)
 3. [Basic Usage Flow](#basic-usage-flow)
 4. [Command Reference](#command-reference)
-5. [Exception Handling](#exception-handling)
-6. [Examples](#examples)
+5. [Best practices](#best-practices)
+6. [Additional Resources](#additional-resources)
 
 ## Getting Started (Android)
 
@@ -43,12 +43,18 @@ Add NFC permissions to your `AndroidManifest.xml`:
 
 ## Core Architecture
 
+### Packages
+
+- **`satochip-lib`: main package that handles the Satochip/Satodime/Seedkeeper protocol and APDU exchanges
+- **`satochip-android`: bindings to use the satochip-lib with Android
+- **`satochip-desktop`: bindings to use the satochip-lib with Computer (Windows/Linux/Mac)
+
 ### Key Classes
 
 - **`SatochipCommandSet`**: Main interface for sending commands to cards
 - **`CardChannel`**: Abstraction for communication channel
 - **`CardListener`**: Interface for handling card connection events
-- **`NFCCardManager`**: Manages NFC card connections
+- **`NFCCardManager`**: Manages NFC card connections (for Android)
 - **`APDUCommand`/`APDUResponse`**: Low-level command/response objects
 - **`SatochipParser`**: Helper class used to parse APDUResponse returned by the card
 
@@ -142,8 +148,6 @@ More details are provided in [ApduParsing.md](./ApduParsing.md).
 2. **Cache PIN securely**: Avoid repeated PIN prompts
 3. **Verify card authenticity**: Use `cardVerifyAuthenticity()` for production apps
 4. **Implement proper state management**: Track card connection state
-
-
 
 ## Additional Resources
 
