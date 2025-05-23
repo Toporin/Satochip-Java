@@ -29,9 +29,44 @@ import java.security.PublicKey;
 import static org.satochip.client.Constants.*;
 
 /**
- * This class is used to send APDU to the applet. Each method corresponds to an APDU as defined in the APPLICATION.md
- * file. Some APDUs map to multiple methods for the sake of convenience since their payload or response require some
- * pre/post processing.
+ * Command set for communicating with Satochip, SeedKeeper, and Satodime applets.
+ *
+ * <p>This class provides a comprehensive interface for sending APDU commands to the smart card
+ * applets. Each method corresponds to specific APDU commands as defined in the application
+ * documentation. The class handles secure channel communication, PIN management, BIP32 operations,
+ * and various cryptographic functions.</p>
+ *
+ * <p>Key features include:</p>
+ * <ul>
+ *   <li>Automatic secure channel establishment and management</li>
+ *   <li>PIN verification and management</li>
+ *   <li>BIP32 hierarchical deterministic wallet operations</li>
+ *   <li>Digital signature generation and verification</li>
+ *   <li>PKI certificate management</li>
+ *   <li>Satodime key management operations</li>
+ *   <li>SeedKeeper secret storage operations</li>
+ * </ul>
+ *
+ * <p>Example usage:</p>
+ * <pre>{@code
+ * CardChannel channel = new MyCardChannel();
+ * SatochipCommandSet commandSet = new SatochipCommandSet(channel);
+ *
+ * // Select the applet
+ * APDUResponse response = commandSet.cardSelect();
+ *
+ * // Verify PIN
+ * byte[] pin = "123456".getBytes();
+ * commandSet.cardVerifyPIN(pin);
+ *
+ * // Get extended key
+ * byte[][] keyData = commandSet.cardBip32GetExtendedKey("m/44'/0'/0'/0/0");
+ * }</pre>
+ *
+ * @author Satochip Team
+ * @see CardChannel
+ * @see APDUCommand
+ * @see APDUResponse
  */
 public class SatochipCommandSet {
 
@@ -62,16 +97,24 @@ public class SatochipCommandSet {
 
     public static final byte[] SATOCHIP_AID = Hex.decode("5361746f43686970"); //SatoChip
     public static final byte[] SEEDKEEPER_AID = Hex.decode("536565644b6565706572"); //SeedKeeper
-    public static final byte[] SATODIME_AID = Hex.decode("5361746f44696d65"); //SatoDime 
+    public static final byte[] SATODIME_AID = Hex.decode("5361746f44696d65"); //SatoDime
 
     public final static byte DERIVE_P1_SOURCE_MASTER = (byte) 0x00;
     public final static byte DERIVE_P1_SOURCE_PARENT = (byte) 0x40;
     public final static byte DERIVE_P1_SOURCE_CURRENT = (byte) 0x80;
 
     /**
-     * Creates a SatochipCommandSet using the given APDU Channel
+     * Creates a new SatochipCommandSet instance with the specified APDU channel.
      *
-     * @param apduChannel APDU channel
+     * <p>This constructor initializes all necessary components including the secure channel
+     * session, parser, and Satodime status. The logger is set to WARNING level by default.</p>
+     *
+     * @param apduChannel the APDU channel for communication with the smart card.
+     *                   Must not be null and should be properly connected.
+     * @throws NullPointerException if apduChannel is null
+     * @see CardChannel
+     * @see SecureChannelSession
+     * @see SatochipParser
      */
     public SatochipCommandSet(CardChannel apduChannel) {
         this.apduChannel = apduChannel;
@@ -81,6 +124,20 @@ public class SatochipCommandSet {
         logger.setLevel(Level.WARNING);
     }
 
+    /**
+     * Sets the logging level using a string identifier.
+     *
+     * <p>Supported levels:</p>
+     * <ul>
+     *   <li>"info" - Enables detailed logging information</li>
+     *   <li>"warning" - Shows only warnings and errors (default)</li>
+     * </ul>
+     *
+     * <p>Any unrecognized level defaults to WARNING.</p>
+     *
+     * @param level the logging level as a string ("info" or "warning")
+     * @see #setLoggerLevel(Level)
+     */
     public void setLoggerLevel(String level) {
         switch (level) {
             case "info":
@@ -95,36 +152,95 @@ public class SatochipCommandSet {
         }
     }
 
+    /**
+     * Sets the logging level using a java.util.logging.Level object.
+     *
+     * <p>This method provides more granular control over logging levels
+     * compared to the string-based version.</p>
+     *
+     * @param level the logging level to set
+     * @see Level
+     * @see #setLoggerLevel(String)
+     */
     public void setLoggerLevel(Level level) {
         logger.setLevel(level);
     }
 
     /**
-     * Returns the application info as stored from the last sent SELECT command. Returns null if no succesful SELECT
-     * command has been sent using this command set.
+     * Returns the current application status information.
      *
-     * @return the application info object
+     * <p>The application status contains information about the card's state including
+     * setup status, seed initialization, secure channel requirements, and version information.
+     * This information is populated after a successful SELECT command.</p>
+     *
+     * @return the application status object, or null if no successful SELECT command
+     *         has been executed using this command set
+     * @see ApplicationStatus
+     * @see #cardSelect()
      */
     public ApplicationStatus getApplicationStatus() {
         return status;
     }
 
+    /**
+     * Returns the current Satodime status after refreshing it from the card.
+     *
+     * <p>This method automatically calls {@link #satodimeGetStatus()} to ensure
+     * the returned status is current. The status includes information about
+     * key slots, unlock counters, and overall Satodime state.</p>
+     *
+     * @return the current Satodime status
+     * @see SatodimeStatus
+     * @see #satodimeGetStatus()
+     */
     public SatodimeStatus getSatodimeStatus() {
         this.satodimeGetStatus();
         return this.satodimeStatus;
     }
 
+    /**
+     * Returns the Satodime unlock secret.
+     *
+     * <p>The unlock secret is a 20-byte value used to generate unlock codes
+     * for various Satodime operations. This secret should be kept confidential
+     * as it provides control over the Satodime device.</p>
+     *
+     * @return the 20-byte unlock secret, or null if not available
+     * @see #setSatodimeUnlockSecret(byte[])
+     */
     public byte[] getSatodimeUnlockSecret() {
         return this.satodimeStatus.getUnlockSecret();
     }
 
+    /**
+     * Sets the Satodime unlock secret.
+     *
+     * <p>This method stores the unlock secret that will be used for generating
+     * unlock codes for Satodime operations. The secret must be exactly 20 bytes.</p>
+     *
+     * @param unlockSecret the 20-byte unlock secret to set
+     * @throws IllegalArgumentException if unlockSecret is not exactly 20 bytes
+     * @see #getSatodimeUnlockSecret()
+     */
     public void setSatodimeUnlockSecret(byte[] unlockSecret) {
         this.satodimeStatus.setUnlockSecret(unlockSecret);
     }
 
     /****************************************
-     *                AUTHENTIKEY                    *
+     *                AUTHENTIKEY           *
      ****************************************/
+
+    /**
+     * Retrieves the device's authentication key (authentikey).
+     *
+     * <p>The authentikey is a unique public key that identifies the device and is used
+     * for authentication purposes. If not already cached, this method will automatically
+     * retrieve it from the card using {@link #cardGetAuthentikey()}.</p>
+     *
+     * @return the 65-byte uncompressed authentication public key
+     * @see #cardGetAuthentikey()
+     * @see #getAuthentikeyHex()
+     */
     public byte[] getAuthentikey() {
         if (authentikey == null) {
             cardGetAuthentikey();
@@ -132,6 +248,16 @@ public class SatochipCommandSet {
         return authentikey;
     }
 
+    /**
+     * Retrieves the device's authentication key as a hexadecimal string.
+     *
+     * <p>This is a convenience method that returns the authentikey in hexadecimal
+     * format. If the authentikey is not cached, it will be retrieved from the card.</p>
+     *
+     * @return the authentication key as a hexadecimal string
+     * @see #getAuthentikey()
+     * @see #cardGetAuthentikey()
+     */
     public String getAuthentikeyHex() {
         if (authentikeyHex == null) {
             cardGetAuthentikey();
@@ -139,6 +265,17 @@ public class SatochipCommandSet {
         return authentikeyHex;
     }
 
+    /**
+     * Retrieves the BIP32 authentication key from the card.
+     *
+     * <p>This method uses the BIP32_GET_AUTHENTIKEY command to retrieve the
+     * authentication key. This is an alternative method to {@link #getAuthentikey()}
+     * that uses a different APDU command.</p>
+     *
+     * @return the 65-byte uncompressed authentication public key
+     * @see #cardBip32GetAuthentikey()
+     * @see #getBip32AuthentikeyHex()
+     */
     public byte[] getBip32Authentikey() {
         if (authentikey == null) {
             cardBip32GetAuthentikey();
@@ -146,6 +283,15 @@ public class SatochipCommandSet {
         return authentikey;
     }
 
+    /**
+     * Retrieves the BIP32 authentication key as a hexadecimal string.
+     *
+     * <p>Convenience method that returns the BIP32 authentikey in hexadecimal format.</p>
+     *
+     * @return the BIP32 authentication key as a hexadecimal string
+     * @see #getBip32Authentikey()
+     * @see #cardBip32GetAuthentikey()
+     */
     public String getBip32AuthentikeyHex() {
         if (authentikeyHex == null) {
             cardBip32GetAuthentikey();
@@ -153,29 +299,83 @@ public class SatochipCommandSet {
         return authentikeyHex;
     }
 
+    /**
+     * Returns the list of possible authentication keys.
+     *
+     * <p>During secure channel establishment, multiple possible authentication keys
+     * may be recovered due to ECDSA signature properties. This method returns all
+     * possible candidates.</p>
+     *
+     * @return list of possible authentication keys (each 65 bytes)
+     * @see #cardInitiateSecureChannel()
+     */
     public List<byte[]> getPossibleAuthentikeys(){
         return this.possibleAuthentikeys;
     }
 
+    /**
+     * Returns the parser instance used for APDU response parsing.
+     *
+     * <p>The parser handles the conversion of raw APDU response data into
+     * structured objects and performs cryptographic operations like signature
+     * verification and key recovery.</p>
+     *
+     * @return the SatochipParser instance
+     * @see SatochipParser
+     */
     public SatochipParser getParser() {
         return parser;
     }
 
+    /**
+     * Sets the default BIP32 derivation path for operations.
+     *
+     * <p>This path will be used as a default when no specific path is provided
+     * to BIP32 operations. The path should be in the format "m/44'/0'/0'/0/0".</p>
+     *
+     * @param bip32path the default BIP32 path string (e.g., "m/44'/0'/0'/0/0")
+     * @see #cardBip32GetExtendedKey()
+     */
     public void setDefaultBip32path(String bip32path) {
         defaultBip32path = bip32path;
     }
 
     /**
-     * Set the SecureChannel object
+     * Sets the secure channel session for this command set.
      *
-     * @param secureChannel secure channel
+     * <p>This is typically used internally and should not be called by client code
+     * unless implementing custom secure channel handling.</p>
+     *
+     * @param secureChannel the secure channel session to use
+     * @see SecureChannelSession
      */
     protected void setSecureChannel(SecureChannelSession secureChannel) {
         this.secureChannel = secureChannel;
     }
 
-
-
+    /**
+     * Transmits an APDU command to the card with automatic secure channel and PIN handling.
+     *
+     * <p>This method handles the complete APDU transmission process including:</p>
+     * <ul>
+     *   <li>Automatic status checking and retrieval</li>
+     *   <li>Secure channel establishment when required</li>
+     *   <li>APDU encryption/decryption for secure commands</li>
+     *   <li>Automatic PIN verification when needed</li>
+     *   <li>Error handling and retry logic</li>
+     * </ul>
+     *
+     * <p>The method will automatically retry operations in certain error conditions
+     * such as uninitialized secure channels or required PIN authentication.</p>
+     *
+     * @param plainApdu the APDU command to transmit
+     * @return the response from the card, decrypted if necessary
+     * @throws RuntimeException if communication fails or an unrecoverable error occurs
+     * @see APDUCommand
+     * @see APDUResponse
+     * @see #cardInitiateSecureChannel()
+     * @see #cardVerifyPIN()
+     */
     public APDUResponse cardTransmit(APDUCommand plainApdu) {
 
         // we try to transmit the APDU until we receive the answer or we receive an unrecoverable error
@@ -217,7 +417,7 @@ public class SatochipCommandSet {
                 // check answer
                 if (sw12 == 0x9000) { // ok!
                     if (isEncrypted) {
-                        // decrypt 
+                        // decrypt
                         //logger.info("SATOCHIPLIB: Rapdu encrypted:"+ rapdu.toHexString());
                         rapdu = secureChannel.decrypt_secure_channel(rapdu);
                         //logger.info("SATOCHIPLIB: Rapdu decrypted:"+ rapdu.toHexString());
@@ -248,6 +448,19 @@ public class SatochipCommandSet {
         return new APDUResponse(new byte[0], (byte) 0x00, (byte) 0x00); // should not happen
     }
 
+    /**
+     * Disconnects from the card and resets internal state.
+     *
+     * <p>This method cleans up the session by:</p>
+     * <ul>
+     *   <li>Resetting the secure channel</li>
+     *   <li>Clearing the application status</li>
+     *   <li>Clearing cached PIN data</li>
+     * </ul>
+     *
+     * <p>This should be called when the card is removed or when the session
+     * needs to be terminated.</p>
+     */
     public void cardDisconnect() {
         secureChannel.resetSecureChannel();
         status = null;
@@ -255,10 +468,20 @@ public class SatochipCommandSet {
     }
 
     /**
-     * Selects a Satochip/Satodime/SeedKeeper instance. The applet is assumed to have been installed with its default AID.
+     * Selects an applet on the card by trying multiple known AIDs.
      *
-     * @return the raw card response
-     * @throws IOException communication error
+     * <p>This method attempts to select applets in the following order:</p>
+     * <ol>
+     *   <li>Satochip applet</li>
+     *   <li>SeedKeeper applet</li>
+     *   <li>Satodime applet</li>
+     * </ol>
+     *
+     * <p>The first successfully selected applet determines the card type.</p>
+     *
+     * @return the APDU response from the successful SELECT command
+     * @throws IOException if communication with the card fails
+     * @see #cardSelect(String)
      */
     public APDUResponse cardSelect() throws IOException {
 
@@ -277,6 +500,21 @@ public class SatochipCommandSet {
         return rapdu;
     }
 
+    /**
+     * Selects a specific applet type on the card.
+     *
+     * <p>Supported card types:</p>
+     * <ul>
+     *   <li>"satochip" - Satochip wallet applet</li>
+     *   <li>"seedkeeper" - SeedKeeper secret storage applet</li>
+     *   <li>"satodime" - Satodime bearer bond applet</li>
+     * </ul>
+     *
+     * @param cardType the type of applet to select
+     * @return the APDU response from the SELECT command
+     * @throws IOException if communication with the card fails
+     * @see #cardSelect()
+     */
     public APDUResponse cardSelect(String cardType) throws IOException {
 
         APDUCommand selectApplet;
@@ -299,6 +537,26 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Retrieves the current status of the applet.
+     *
+     * <p>The status includes information about:</p>
+     * <ul>
+     *   <li>Protocol and applet version numbers</li>
+     *   <li>Setup completion status</li>
+     *   <li>Seed initialization status</li>
+     *   <li>Secure channel requirements</li>
+     *   <li>2FA status</li>
+     *   <li>PIN retry counters</li>
+     * </ul>
+     *
+     * <p>This method updates the internal status object and should be called
+     * after significant operations to ensure status is current.</p>
+     *
+     * @return the APDU response containing status information
+     * @see ApplicationStatus
+     * @see #getApplicationStatus()
+     */
     public APDUResponse cardGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_STATUS, 0x00, 0x00, new byte[0]);
 
@@ -312,7 +570,26 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
-    // do setup secure channel in this method
+    /**
+     * Initiates a secure channel with the card.
+     *
+     * <p>This method performs the secure channel establishment process:</p>
+     * <ol>
+     *   <li>Sends the client's public key to the card</li>
+     *   <li>Receives the card's public key and authentication signatures</li>
+     *   <li>Performs ECDH key agreement</li>
+     *   <li>Derives session encryption and MAC keys</li>
+     *   <li>Recovers possible authentication keys</li>
+     * </ol>
+     *
+     * <p>After successful completion, all subsequent commands will be automatically
+     * encrypted when required by the applet.</p>
+     *
+     * @return list of possible authentication keys recovered during the process
+     * @throws IOException if communication with the card fails
+     * @see SecureChannelSession
+     * @see #getPossibleAuthentikeys()
+     */
     public List<byte[]> cardInitiateSecureChannel() throws IOException {
 
         byte[] pubkey = secureChannel.getPublicKey();
@@ -330,7 +607,25 @@ public class SatochipCommandSet {
 
         return possibleAuthentikeys;
     }
-    // only valid for v0.12 and higher
+
+    /**
+     * Exports the device's authentication public key.
+     *
+     * <p>This method retrieves the device's authentication key using the
+     * EXPORT_AUTHENTIKEY command. The key is cached for future use and
+     * can be accessed via {@link #getAuthentikey()}.</p>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip v0.12 and higher</li>
+     *   <li>All Seedkeeper versions</li>
+     *   <li>All Satodime versions</li>
+     * </ul>
+     *
+     * @return the 65-byte uncompressed authentication public key
+     * @see #getAuthentikey()
+     * @see #getAuthentikeyHex()
+     */
     public byte[] cardGetAuthentikey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_AUTHENTIKEY, 0x00, 0x00, new byte[0]);
@@ -346,6 +641,18 @@ public class SatochipCommandSet {
         return authentikey;
     }
 
+    /**
+     * Retrieves the BIP32 authentication key from the card.
+     *
+     * <p>This method uses the BIP32_GET_AUTHENTIKEY command to retrieve the
+     * authentication key. The returned key is cached for future access.</p>
+     *
+     * <p>Note: this method is only available for Satochip applet</p>
+     *
+     * @return the APDU response containing the authentication key data
+     * @see #getBip32Authentikey()
+     * @see #getBip32AuthentikeyHex()
+     */
     public APDUResponse cardBip32GetAuthentikey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_GET_AUTHENTIKEY, 0x00, 0x00, new byte[0]);
@@ -361,6 +668,17 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Exports the PKI public key from the card.
+     *
+     * <p>This method retrieves the public key used for PKI operations and
+     * device authentication. The key is typically used for certificate-based
+     * authentication and device identity verification.</p>
+     *
+     * @return the APDU response containing the PKI public key
+     * @see #cardExportPersoCertificate()
+     * @see #cardChallengeResponsePerso(byte[])
+     */
     public APDUResponse cardExportPkiPubkey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_PUBKEY, 0x00, 0x00, new byte[0]);
@@ -376,10 +694,122 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Retrieves the human-readable label assigned to the card.
+     *
+     * <p>This method returns the custom label that has been set for the card,
+     * which can be used to identify the device in user interfaces. If no label
+     * has been set, returns a default value.</p>
+     *
+     * <p>Labels are useful for:</p>
+     * <ul>
+     *   <li>Distinguishing between multiple cards</li>
+     *   <li>User-friendly device identification</li>
+     *   <li>Organizational purposes</li>
+     *   <li>Card management systems</li>
+     * </ul>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip v0.12 and higher</li>
+     *   <li>All Seedkeeper versions</li>
+     *   <li>All Satodime versions</li>
+     * </ul>
+     *
+     * @return the card's label as a UTF-8 string, or "(none)" if not set, or "(unknown)" on error
+     * @see #setCardLabel(String)
+     */
+    public String getCardLabel() {
+        logger.info("SATOCHIPLIB: getCardLabel START");
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x01, new byte[0]);
+        logger.info("SATOCHIPLIB: C-APDU getCardLabel:"+ plainApdu.toHexString());
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU getCardLabel:"+ respApdu.toHexString());
+        int sw = respApdu.getSw();
+        String label;
+        if (sw == 0x9000){
+            byte labelSize = respApdu.getData()[0];
+            try {
+                label = new String(respApdu.getData(), 1, labelSize, StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                logger.warning("SATOCHIPLIB: getCardLabel UnicodeDecodeError while decoding card label!");
+                label = new String(respApdu.getData(), 1, respApdu.getData().length - 1, StandardCharsets.UTF_8);
+            }
+        } else if (sw == 0x6D00) {
+            logger.info("SATOCHIPLIB: getCardLabel  label not set:" + sw);
+            label = "(none)";
+        } else {
+            logger.warning("SATOCHIPLIB: getCardLabel Error while recovering card label:" + sw);
+            label = "(unknown)";
+        }
+        return label;
+    }
+
+    /**
+     * Sets a human-readable label for the card.
+     *
+     * <p>This method assigns a custom UTF-8 label to the card for identification
+     * purposes. The label is stored persistently on the card and can be retrieved
+     * using {@link #getCardLabel()}.</p>
+     *
+     * <p>Label guidelines:</p>
+     * <ul>
+     *   <li>Use descriptive names for easy identification</li>
+     *   <li>Keep length reasonable for display purposes</li>
+     *   <li>Use UTF-8 compatible characters</li>
+     *   <li>Avoid sensitive information in labels</li>
+     * </ul>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip v0.12 and higher</li>
+     *   <li>All Seedkeeper versions</li>
+     *   <li>All Satodime versions</li>
+     * </ul>
+     *
+     * @param label the UTF-8 label to assign to the card
+     * @return true if the label was set successfully, false otherwise
+     * @see #getCardLabel()
+     */
+    public Boolean setCardLabel(String label) {
+        logger.info("SATOCHIPLIB: setCardLabel START");
+
+        byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
+        byte[] data = new byte[1 + labelData.length];
+        data[0] = (byte) labelData.length;
+        System.arraycopy(labelData, 0, data, 1, labelData.length);
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x00, data);
+        logger.info("SATOCHIPLIB: C-APDU setCardLabel:"+ plainApdu.toHexString());
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU setCardLabel:"+ respApdu.toHexString());
+        int sw = respApdu.getSw();
+        return sw == 0x9000;
+    }
+    
     /****************************************
-     *                 CARD MGMT                      *
+     *              CARD MGMT               *
      ****************************************/
 
+    /**
+     * Performs initial setup of the card with simplified parameters.
+     *
+     * <p>This is a convenience method that sets up the card with:</p>
+     * <ul>
+     *   <li>The specified PIN0 and retry count</li>
+     *   <li>Randomly generated PIN1, PUK0, and PUK1</li>
+     *   <li>Single retry attempts for PUK operations</li>
+     * </ul>
+     *
+     * <p>This method is suitable for basic setup scenarios where only the main PIN
+     * needs to be specified.</p>
+     *
+     * @param pin_tries0 number of retry attempts for PIN0 (typically 3-5)
+     * @param pin0 the PIN0 value to set (4-16 bytes recommended)
+     * @return the APDU response from the setup command
+     * @see #cardSetup(byte, byte, byte[], byte[], byte, byte, byte[], byte[])
+     */
     public APDUResponse cardSetup(byte pin_tries0, byte[] pin0) {
 
         // use random values for pin1, ublk0, ublk1
@@ -398,6 +828,35 @@ public class SatochipCommandSet {
         return cardSetup(pin_tries0, ublk_tries0, pin0, ublk0, pin_tries1, ublk_tries1, pin1, ublk1);
     }
 
+    /**
+     * Performs comprehensive initial setup of the card with full parameter control.
+     *
+     * <p>This method initializes the card with all security parameters including:</p>
+     * <ul>
+     *   <li>PIN0 and PIN1 with their respective retry counters</li>
+     *   <li>PUK0 and PUK1 (unblock keys) with their retry counters</li>
+     *   <li>Memory allocation settings (deprecated)</li>
+     *   <li>Access control list settings (deprecated)</li>
+     * </ul>
+     *
+     * <p>After successful setup, the PIN0 is automatically cached for subsequent operations.
+     * For Satodime cards, the setup response also updates the internal status.</p>
+     *
+     * <p><strong>Warning:</strong> This operation can only be performed once per card.
+     * Ensure all parameters are correct before calling this method.</p>
+     *
+     * @param pin_tries0 number of retry attempts for PIN0 before blocking
+     * @param ublk_tries0 number of retry attempts for PUK0 before permanent blocking
+     * @param pin0 the primary PIN value (4-16 bytes recommended)
+     * @param ublk0 the primary unblock key (PUK0) value
+     * @param pin_tries1 number of retry attempts for PIN1 before blocking
+     * @param ublk_tries1 number of retry attempts for PUK1 before permanent blocking
+     * @param pin1 the secondary PIN value
+     * @param ublk1 the secondary unblock key (PUK1) value
+     * @return the APDU response from the setup command
+     * @throws IllegalStateException if the card is already set up
+     * @see #cardSetup(byte, byte[])
+     */
     public APDUResponse cardSetup(
             byte pin_tries0, byte ublk_tries0, byte[] pin0, byte[] ublk0,
             byte pin_tries1, byte ublk_tries1, byte[] pin1, byte[] ublk1) {
@@ -469,6 +928,34 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Sends a factory reset command to the card.
+     * Factory reset is triggered by sending a fixed number of successive reset command to the card.
+     * The user must remove the card from the reader between each reset command.
+     *
+     * <p>Factory reset resets the card to its factory state, erasing all data including:</p>
+     * <ul>
+     *   <li>All stored keys and seeds</li>
+     *   <li>PIN and PUK settings</li>
+     *   <li>All user data and configurations</li>
+     * </ul>
+     *
+     * <p><strong>Warning:</strong> Factory reset is irreversible and will permanently
+     * destroy all user data on the card. Use with extreme caution.</p>
+     *
+     * <p>Note: This command must be sent without secure channel encryption and
+     * should not be mixed with other commands to ensure proper execution.</p>
+     *
+     * <p><strong>Compatibility: </strong></p>
+     * <ul>
+     *   <li>Satochip v0.12-0.4 and higher</li>
+     *   <li>Seedkeeper v0.1 </li>
+     *   <li>Not supported on satodime</li>
+     * </ul>
+     *
+     * @return the APDU response from the reset command
+     * @throws Exception if the reset operation fails
+     */
     public APDUResponse cardSendResetCommand() throws Exception {
         byte[] data = new byte[]{};
 
@@ -491,11 +978,50 @@ public class SatochipCommandSet {
     /****************************************
      *             PIN MGMT                  *
      ****************************************/
+
+    /**
+     * Stores a PIN0 value for subsequent automatic authentication.
+     *
+     * <p>This method caches the PIN0 value which will be used automatically
+     * when PIN verification is required. The PIN is stored in memory until
+     * the session is disconnected or explicitly cleared.</p>
+     *
+     * @param pin the PIN0 value to cache (typically 4-16 bytes)
+     * @see #cardVerifyPIN()
+     * @see #cardDisconnect()
+     */
     public void setPin0(byte[] pin) {
         this.pin0 = new byte[pin.length];
         System.arraycopy(pin, 0, this.pin0, 0, pin.length);
     }
 
+    /**
+     * Verifies a PIN against the card with explicit PIN parameter.
+     *
+     * <p>This method verifies the provided PIN with the card. If the PIN is null,
+     * it will use the cached PIN0 value. Successful verification allows access to
+     * protected operations.</p>
+     *
+     * <p>The method handles various authentication error conditions:</p>
+     * <ul>
+     *   <li>Wrong PIN with remaining attempts</li>
+     *   <li>Wrong PIN (legacy format)</li>
+     *   <li>Blocked PIN requiring PUK</li>
+     *   <li>Factory reset condition</li>
+     * </ul>
+     *
+     * <p>Upon successful verification, the PIN is cached for future operations.</p>
+     *
+     * @param pin the PIN to verify, or null to use cached PIN0
+     * @return the APDU response from the verification command
+     * @throws WrongPINException if the PIN is incorrect, includes retry count
+     * @throws WrongPINLegacyException if the PIN is incorrect (legacy format)
+     * @throws BlockedPINException if the PIN is blocked and requires PUK
+     * @throws ResetToFactoryException if the card has been reset to factory state
+     * @throws RuntimeException if no PIN is available and none was provided
+     * @see #setPin0(byte[])
+     * @see #cardVerifyPIN()
+     */
     public APDUResponse cardVerifyPIN(byte[] pin) throws Exception {
 
         byte[] mypin = pin;
@@ -536,10 +1062,41 @@ public class SatochipCommandSet {
         }
     }
 
+    /**
+     * Verifies the cached PIN0 against the card.
+     *
+     * <p>This is a convenience method that uses the previously cached PIN0 value
+     * for verification. The PIN must have been set using {@link #setPin0(byte[])}
+     * or a previous successful verification.</p>
+     *
+     * @return the APDU response from the verification command
+     * @throws Exception if verification fails or no PIN is cached
+     * @see #cardVerifyPIN(byte[])
+     * @see #setPin0(byte[])
+     */
     public APDUResponse cardVerifyPIN() throws Exception {
         return cardVerifyPIN(this.pin0);
     }
 
+    /**
+     * Changes the PIN0 from an old value to a new value.
+     *
+     * <p>This method allows changing the PIN0 by providing both the current PIN
+     * and the desired new PIN. The operation requires that the current PIN is
+     * correct and that the card is not in a blocked state.</p>
+     *
+     * <p>Upon successful completion, the new PIN is automatically cached for
+     * future operations.</p>
+     *
+     * @param oldPin the current PIN0 value
+     * @param newPin the new PIN0 value to set
+     * @return the APDU response from the change command
+     * @throws WrongPINException if the old PIN is incorrect
+     * @throws WrongPINLegacyException if the old PIN is incorrect (legacy format)
+     * @throws BlockedPINException if the PIN is blocked
+     * @throws Exception if the operation fails
+     * @see #setPin0(byte[])
+     */
     public APDUResponse cardChangePin(byte[] oldPin, byte[] newPin) throws Exception {
         logger.info("SATOCHIPLIB: changeCardPin START");
 
@@ -555,7 +1112,7 @@ public class SatochipCommandSet {
             logger.info("SATOCHIPLIB: C-APDU changeCardPin");
             APDUResponse rapdu = this.cardTransmit(plainApdu);
             logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ rapdu.toHexString());
-            
+
             rapdu.checkAuthOK();
             return rapdu;
 
@@ -577,6 +1134,24 @@ public class SatochipCommandSet {
         }
     }
 
+    /**
+     * Unblocks a blocked PIN using the corresponding PUK (PIN Unblock Key).
+     *
+     * <p>When a PIN becomes blocked due to too many incorrect attempts, this method
+     * can be used to unblock it using the PUK. The PUK itself has limited retry
+     * attempts, and if exhausted, may trigger a factory reset.</p>
+     *
+     * <p>Successful unblocking typically resets the PIN retry counter, allowing
+     * normal PIN operations to resume.</p>
+     *
+     * @param puk the PIN Unblock Key (PUK) to use for unblocking
+     * @return the APDU response from the unblock command
+     * @throws WrongPINException if the PUK is incorrect
+     * @throws WrongPINLegacyException if the PUK is incorrect (legacy format)
+     * @throws BlockedPINException if the PUK itself is blocked
+     * @throws ResetToFactoryException if the card triggers a factory reset
+     * @throws Exception if the operation fails
+     */
     public APDUResponse cardUnblockPin(byte[] puk) throws Exception {
         APDUCommand plainApdu = new APDUCommand(
                 0xB0,
@@ -614,13 +1189,34 @@ public class SatochipCommandSet {
             this.pin0 = null;
             throw e;
         }
-        
+
     }
 
     /****************************************
-     *                 BIP32                     *
+     *                BIP32                 *
      ****************************************/
 
+    /**
+     * Imports a master seed into the card for BIP32 operations.
+     *
+     * <p>This method stores a master seed on the card which will be used as the root
+     * for all BIP32 hierarchical deterministic key derivations. The seed should be
+     * generated using a cryptographically secure random number generator.</p>
+     *
+     * <p>Common seed lengths:</p>
+     * <ul>
+     *   <li>16 bytes (128 bits) - minimum recommended</li>
+     *   <li>24 bytes (192 bits) - good security</li>
+     *   <li>32 bytes (256 bits) - maximum security</li>
+     * </ul>
+     *
+     * <p><strong>Warning:</strong> Ensure the seed is properly backed up before importing.</p>
+     *
+     * @param masterseed the master seed bytes to import (16-64 bytes recommended)
+     * @return the APDU response from the import command
+     * @see #cardResetSeed(byte[], byte[])
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     */
     public APDUResponse cardBip32ImportSeed(byte[] masterseed) {
         //TODO: check seed (length...)
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_IMPORT_SEED, masterseed.length, 0x00, masterseed);
@@ -633,6 +1229,22 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Resets the BIP32 seed with PIN and optional 2FA challenge-response.
+     *
+     * <p>This method clears the existing BIP32 seed from the card, allowing a new
+     * seed to be imported. The operation requires PIN verification and optionally
+     * supports 2FA challenge-response authentication for additional security.</p>
+     *
+     * <p>After successful reset, a new seed can be imported using
+     * {@link #cardBip32ImportSeed(byte[])}.</p>
+     *
+     * @param pin the PIN0 for authentication
+     * @param chalresponse optional 2FA challenge response (20 bytes), or null if not using 2FA
+     * @return the APDU response from the reset command
+     * @throws IllegalArgumentException if chalresponse is not null and not exactly 20 bytes
+     * @see #cardBip32ImportSeed(byte[])
+     */
     public APDUResponse cardResetSeed(byte[] pin, byte[] chalresponse) {
 
         byte p1 = (byte) pin.length;
@@ -651,14 +1263,27 @@ public class SatochipCommandSet {
         }
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_RESET_SEED, p1, 0x00, data);
-        logger.info("SATOCHIPLIB: C-APDU cardSignTransactionHash:" + plainApdu.toHexString());
+        logger.info("SATOCHIPLIB: C-APDU cardResetSeed:" + plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardSignTransactionHash:" + respApdu.toHexString());
+        logger.info("SATOCHIPLIB: R-APDU cardResetSeed:" + respApdu.toHexString());
         // TODO: check SW code for particular status
 
         return respApdu;
     }
 
+    /**
+     * Derives an extended key using the default BIP32 path.
+     *
+     * <p>This convenience method uses the default BIP32 path set via
+     * {@link #setDefaultBip32path(String)} or falls back to "m/44'/60'/0'/0/0"
+     * if no default is set.</p>
+     *
+     * @return array containing [public_key, chain_code] where public_key is 65 bytes
+     *         and chain_code is 32 bytes
+     * @throws Exception if the derivation fails or no seed is available
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     * @see #setDefaultBip32path(String)
+     */
     public byte[][] cardBip32GetExtendedKey() throws Exception {
         if (defaultBip32path == null) {
             defaultBip32path = "m/44'/60'/0'/0/0";
@@ -666,9 +1291,39 @@ public class SatochipCommandSet {
         return cardBip32GetExtendedKey(defaultBip32path, null, null);
     }
 
+    /**
+     * Derives an extended key for the specified BIP32 path with optional parameters.
+     *
+     * <p>This method performs BIP32 hierarchical deterministic key derivation on the card.
+     * The path specifies which key to derive from the master seed. The method supports
+     * various derivation options and can handle both public and private key derivation.</p>
+     *
+     * <p>Path format examples:</p>
+     * <ul>
+     *   <li>"m/44'/0'/0'/0/0" - Bitcoin mainnet first account, first address</li>
+     *   <li>"m/44'/60'/0'/0/0" - Ethereum mainnet first account, first address</li>
+     *   <li>"m/49'/0'/0'/0/0" - Bitcoin P2SH-P2WPKH</li>
+     * </ul>
+     *
+     * <p>The apostrophe (') indicates hardened derivation (adds 0x80000000 to the index).</p>
+     *
+     * @param stringPath the BIP32 derivation path as a string (maximum 10 levels deep)
+     * @param flags optional derivation flags:
+     *              <ul>
+     *                <li>0x40 - derive public key (default)</li>
+     *                <li>0x42 - derive private key</li>
+     *                <li>0x44 - BIP85 derivation</li>
+     *              </ul>
+     * @param sid optional SeedKeeper secret ID for secure derivation
+     * @return array containing [key, chain_code] where key is 33 bytes (compressed public)
+     *         or 65 bytes (uncompressed public) or 32 bytes (private), and chain_code is 32 bytes
+     * @throws Exception if the path is invalid, too deep, or derivation fails
+     * @see #cardBip32GetExtendedKey()
+     * @see #cardBip32GetXpub(String, long, Integer)
+     */
     public byte[][] cardBip32GetExtendedKey(String stringPath, Byte flags, Integer sid) throws Exception {
         logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey");
-        Bip32Path parsedPath = parser.parseBip32PathToBytes(stringPath);
+        Bip32Path parsedPath = new Bip32Path(stringPath);
         if (parsedPath.getDepth() > 10) {
             throw new Exception("Path length exceeds maximum depth of 10: " + parsedPath.getDepth());
         }
@@ -752,12 +1407,49 @@ public class SatochipCommandSet {
         }
     }
 
-    // todo: only for testing testCardBip32GetExtendedkeyBip85
+    /**
+     * Returns the cached extended key from the last derivation operation.
+     *
+     * <p>This method is primarily used for testing purposes and returns the
+     * extended key that was cached from the most recent call to
+     * {@link #cardBip32GetExtendedKey(String, Byte, Integer)}.</p>
+     *
+     * @return the cached extended key bytes, or null if no derivation has been performed
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     */
     public byte[] getExtendedKey() {
         return extendedKey;
     }
 
-    // todo: cardBip32GetXpub in progress
+    /**
+     * Derives and formats a BIP32 extended public key (xpub) for the specified path.
+     *
+     * <p>This method performs BIP32 key derivation and formats the result as a
+     * Base58Check-encoded extended public key string. The xpub format includes:</p>
+     * <ul>
+     *   <li>Version bytes (4 bytes) - determines network and key type</li>
+     *   <li>Depth (1 byte) - how many derivations from master</li>
+     *   <li>Parent fingerprint (4 bytes) - first 4 bytes of parent key hash</li>
+     *   <li>Child number (4 bytes) - derivation index of this key</li>
+     *   <li>Chain code (32 bytes) - for further derivations</li>
+     *   <li>Public key (33 bytes) - compressed public key</li>
+     * </ul>
+     *
+     * <p>Common xtype values:</p>
+     * <ul>
+     *   <li>0x0488B21E - Bitcoin mainnet P2PKH (xpub)</li>
+     *   <li>0x043587CF - Bitcoin testnet P2PKH (tpub)</li>
+     *   <li>0x049D7CB2 - Bitcoin mainnet P2SH-P2WPKH (ypub)</li>
+     *   <li>0x04B24746 - Bitcoin mainnet P2WPKH (zpub)</li>
+     * </ul>
+     *
+     * @param path the BIP32 derivation path (e.g., "m/44'/0'/0'")
+     * @param xtype the extended key version type for network/format identification
+     * @param sid optional SeedKeeper secret ID for secure derivation
+     * @return the Base58Check-encoded extended public key string
+     * @throws Exception if derivation fails or path is invalid
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     */
     public String cardBip32GetXpub(String path, long xtype, Integer sid) throws Exception {
         logger.warning("SATOCHIPLIB: cardBip32GetXpub");
 
@@ -777,7 +1469,7 @@ public class SatochipCommandSet {
             childPubkey = parser.compressPubKey(extendedKey);
         }
 
-        Bip32Path parsedPath = parser.parseBip32PathToBytes(path);
+        Bip32Path parsedPath = new Bip32Path(path);
         int depth = parsedPath.getDepth();
         byte[] bytePath = parsedPath.getBytes();
         byte[] fingerprintBytes = new byte[4];
@@ -785,7 +1477,7 @@ public class SatochipCommandSet {
 
         if (depth > 0) {
             // Get parent info
-            String parentPath = parser.getBip32PathParentPath(path);
+            String parentPath = Bip32Path.getBip32PathParentPath(path);
             logger.warning("SATOCHIPLIB: cardBip32GetXpub: parentPathString: "+ parentPath);
 
             cardBip32GetExtendedKey(parentPath, optionFlags, sid);
@@ -819,6 +1511,17 @@ public class SatochipCommandSet {
         return xpub;
     }
 
+    /**
+     * Encodes bytes with Base58Check encoding.
+     *
+     * <p>This method adds a 4-byte checksum to the input data and encodes the result
+     * using Base58 encoding. This is the standard encoding used for Bitcoin addresses
+     * and extended keys.</p>
+     *
+     * @param bytes the bytes to encode
+     * @return the Base58Check-encoded string
+     * @see #calculateChecksum(byte[])
+     */
     private String encodeChecked(byte[] bytes) {
         byte[] checksum = calculateChecksum(bytes);
         byte[] checksummedBytes = new byte[bytes.length + 4];
@@ -828,6 +1531,16 @@ public class SatochipCommandSet {
 //        return encode(checksummedBytes);
     }
 
+    /**
+     * Calculates a 4-byte checksum for Base58Check encoding.
+     *
+     * <p>The checksum is the first 4 bytes of the double SHA256 hash of the input data.
+     * This provides error detection for encoded data.</p>
+     *
+     * @param bytes the input bytes to checksum
+     * @return the 4-byte checksum
+     * @see #encodeChecked(byte[])
+     */
     private byte[] calculateChecksum(byte[] bytes) {
         byte[] hash = Sha256Hash.hashTwice(bytes);
         byte[] checksum = new byte[4];
@@ -835,6 +1548,15 @@ public class SatochipCommandSet {
         return checksum;
     }
 
+    /**
+     * Computes the RIPEMD-160 hash of the input data.
+     *
+     * <p>RIPEMD-160 is used in Bitcoin for creating addresses from public keys.
+     * It produces a 20-byte hash value.</p>
+     *
+     * @param input the input bytes to hash
+     * @return the 20-byte RIPEMD-160 hash
+     */
     public static byte[] digestRipeMd160(byte[] input) {
         RIPEMD160Digest digest = new RIPEMD160Digest();
         digest.update(input, 0, input.length);
@@ -843,13 +1565,33 @@ public class SatochipCommandSet {
         return ripmemdHash;
     }
 
-    // public APDUResponse cardSignMessage(int keyNbr, byte[] pubkey, String message, byte[] hmac, String altcoin){
-    // }
-
     /****************************************
      *             SIGNATURES              *
      ****************************************/
 
+    /**
+     * Signs a transaction hash using the specified key with optional 2FA.
+     *
+     * <p>This method creates a digital signature for a transaction hash using either
+     * a specific key slot or the BIP32-derived key. The signature can be used to
+     * authorize cryptocurrency transactions.</p>
+     *
+     * <p>Key number values:</p>
+     * <ul>
+     *   <li>0x00-0xFE - Specific key slot number</li>
+     *   <li>0xFF - Use current BIP32-derived key</li>
+     * </ul>
+     *
+     * <p>The method supports optional 2FA challenge-response for additional security.
+     * When 2FA is used, the challenge response must be exactly 20 bytes.</p>
+     *
+     * @param keynbr the key number to use for signing (0xFF for BIP32 key)
+     * @param txhash the 32-byte transaction hash to sign
+     * @param chalresponse optional 20-byte 2FA challenge response, or null
+     * @return the APDU response containing the DER-encoded signature
+     * @throws IllegalArgumentException if txhash is not 32 bytes or chalresponse is not 20 bytes
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     */
     public APDUResponse cardSignTransactionHash(byte keynbr, byte[] txhash, byte[] chalresponse) {
 
         byte[] data;
@@ -880,6 +1622,9 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    // TODO: add Schnorr signatures
+    // TODO: add MuSig2 signatures
+
     /****************************************
      *               2FA commands            *
      ****************************************/
@@ -889,7 +1634,24 @@ public class SatochipCommandSet {
      *                SATODIME              *
      ****************************************/
 
-
+    /**
+     * Retrieves the current status of the Satodime device.
+     *
+     * <p>This method queries the Satodime for its current state including:</p>
+     * <ul>
+     *   <li>Setup completion status</li>
+     *   <li>Unlock counter value</li>
+     *   <li>Maximum number of key slots</li>
+     *   <li>Individual key slot states</li>
+     * </ul>
+     *
+     * <p>The status is automatically cached in the internal satodimeStatus object
+     * and can be accessed via {@link #getSatodimeStatus()}.</p>
+     *
+     * @return the APDU response containing status information
+     * @see SatodimeStatus
+     * @see #getSatodimeStatus()
+     */
     public APDUResponse satodimeGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SATODIME_STATUS, 0x00, 0x00, new byte[0]);
 
@@ -904,6 +1666,24 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Retrieves the status of a specific Satodime key slot.
+     *
+     * <p>This method returns detailed information about a particular key slot including:</p>
+     * <ul>
+     *   <li>Key status (uninitialized/sealed/unsealed)</li>
+     *   <li>Key type and asset information</li>
+     *   <li>SLIP-44 coin type</li>
+     *   <li>Smart contract details</li>
+     *   <li>Token ID information</li>
+     *   <li>Additional metadata</li>
+     * </ul>
+     *
+     * @param keyNbr the key slot number to query (0-255)
+     * @return the APDU response containing key slot status
+     * @see SatodimeKeyslotStatus
+     * @see #satodimeGetStatus()
+     */
     public APDUResponse satodimeGetKeyslotStatus(int keyNbr) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -915,6 +1695,28 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Sets the metadata for a Satodime key slot (part 0 of 2).
+     *
+     * <p>This method configures the metadata for a key slot including asset type,
+     * SLIP-44 coin type, smart contract address, and token ID. This is the first
+     * part of the key slot configuration process.</p>
+     *
+     * <p>The operation requires owner authentication via unlock code generation.
+     * Upon successful completion, the unlock counter is automatically incremented.</p>
+     *
+     * @param keyNbr the key slot number to configure (0-255)
+     * @param RFU1 reserved for future use (set to 0)
+     * @param RFU2 reserved for future use (set to 0)
+     * @param key_asset the asset type (coin=0x01, token=0x10, NFT=0x40, etc.)
+     * @param key_slip44 the 4-byte SLIP-44 coin type identifier
+     * @param key_contract the 34-byte smart contract address (TLV format)
+     * @param key_tokenid the 34-byte token ID (TLV format)
+     * @return the APDU response from the configuration command
+     * @throws IllegalArgumentException if any parameter has incorrect length
+     * @see #satodimeSetKeyslotStatusPart1(int, byte[])
+     * @see Constants#MAP_CODE_BY_ASSET
+     */
     public APDUResponse satodimeSetKeyslotStatusPart0(int keyNbr, int RFU1, int RFU2, int key_asset, byte[] key_slip44, byte[] key_contract, byte[] key_tokenid) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -962,6 +1764,22 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Sets the additional data for a Satodime key slot (part 1 of 2).
+     *
+     * <p>This method completes the key slot configuration by setting additional
+     * metadata. This must be called after {@link #satodimeSetKeyslotStatusPart0}
+     * to complete the key slot setup process.</p>
+     *
+     * <p>The operation requires owner authentication and increments the unlock counter
+     * upon successful completion.</p>
+     *
+     * @param keyNbr the key slot number to configure (0-255)
+     * @param key_data the 66-byte additional metadata (TLV format)
+     * @return the APDU response from the configuration command
+     * @throws IllegalArgumentException if key_data is not exactly 66 bytes
+     * @see #satodimeSetKeyslotStatusPart0(int, int, int, int, byte[], byte[], byte[])
+     */
     public APDUResponse satodimeSetKeyslotStatusPart1(int keyNbr, byte[] key_data) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -996,6 +1814,20 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Retrieves the public key for a specific Satodime key slot.
+     *
+     * <p>This method returns the public key associated with a key slot without
+     * changing the key's state. The public key can be used to verify ownership
+     * and generate addresses without revealing the private key.</p>
+     *
+     * <p>The returned public key is authenticated with a signature from the
+     * device's authentication key to prevent tampering.</p>
+     *
+     * @param keyNbr the key slot number to query (0-255)
+     * @return the APDU response containing the authenticated public key
+     * @see #satodimeGetPrivkey(int)
+     */
     public APDUResponse satodimeGetPubkey(int keyNbr) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -1008,6 +1840,29 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Retrieves the private key for a specific Satodime key slot.
+     *
+     * <p>This method returns the private key and entropy data for a key slot without
+     * changing the key's state. This operation requires owner authentication via
+     * unlock code and increments the unlock counter upon success.</p>
+     *
+     * <p><strong>Security Warning:</strong> The private key provides full control
+     * over associated cryptocurrency assets. Handle with extreme care and ensure
+     * secure storage.</p>
+     *
+     * <p>The response includes:</p>
+     * <ul>
+     *   <li>Entropy data used to generate the key</li>
+     *   <li>32-byte private key</li>
+     *   <li>Authentication signature</li>
+     * </ul>
+     *
+     * @param keyNbr the key slot number to query (0-255)
+     * @return the APDU response containing the private key and entropy
+     * @see #satodimeGetPubkey(int)
+     * @see #satodimeUnsealKey(int)
+     */
     public APDUResponse satodimeGetPrivkey(int keyNbr) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -1032,6 +1887,31 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Seals a Satodime key slot with user-provided entropy.
+     *
+     * <p>This method transitions a key slot from uninitialized to sealed state.
+     * When sealed, a key is generated using a combination of user entropy,
+     * device entropy, and the authentication key coordinate.</p>
+     *
+     * <p>The sealing process:</p>
+     * <ol>
+     *   <li>Combines user entropy with device-generated entropy</li>
+     *   <li>Generates a cryptographic key pair</li>
+     *   <li>Transitions the slot to sealed state</li>
+     *   <li>Increments the unlock counter</li>
+     * </ol>
+     *
+     * <p>Once sealed, the key can be retrieved via {@link #satodimeGetPubkey(int)}
+     * but the private key remains protected until unsealing.</p>
+     *
+     * @param keyNbr the key slot number to seal (0-255)
+     * @param entropy_user the 32-byte user-provided entropy for key generation
+     * @return the APDU response from the sealing operation
+     * @throws IllegalArgumentException if entropy_user is not exactly 32 bytes
+     * @see #satodimeUnsealKey(int)
+     * @see #satodimeResetKey(int)
+     */
     public APDUResponse satodimeSealKey(int keyNbr, byte[] entropy_user) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -1059,6 +1939,24 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Unseals a Satodime key slot, making the private key accessible.
+     *
+     * <p>This method transitions a key slot from sealed to unsealed state, making
+     * the private key accessible via {@link #satodimeGetPrivkey(int)}. This is
+     * typically the final step before spending associated cryptocurrency assets.</p>
+     *
+     * <p><strong>Security Implications:</strong> Once unsealed, the private key
+     * becomes accessible and the bearer bond value can be claimed. This operation
+     * should only be performed when ready to transfer ownership or spend assets.</p>
+     *
+     * <p>The operation requires owner authentication and increments the unlock counter.</p>
+     *
+     * @param keyNbr the key slot number to unseal (0-255)
+     * @return the APDU response from the unsealing operation
+     * @see #satodimeSealKey(int, byte[])
+     * @see #satodimeGetPrivkey(int)
+     */
     public APDUResponse satodimeUnsealKey(int keyNbr) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -1083,6 +1981,27 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Resets a Satodime key slot to uninitialized state.
+     *
+     * <p>This method transitions a key slot from unsealed back to uninitialized state,
+     * effectively erasing the key and allowing the slot to be reused with new entropy.
+     * This operation can only be performed on unsealed key slots.</p>
+     *
+     * <p>Use cases for key reset:</p>
+     * <ul>
+     *   <li>Preparing a slot for new assets after spending</li>
+     *   <li>Correcting metadata errors</li>
+     *   <li>Reusing slots in testing scenarios</li>
+     * </ul>
+     *
+     * <p>The operation requires owner authentication and increments the unlock counter.</p>
+     *
+     * @param keyNbr the key slot number to reset (0-255)
+     * @return the APDU response from the reset operation
+     * @see #satodimeSealKey(int, byte[])
+     * @see #satodimeUnsealKey(int)
+     */
     public APDUResponse satodimeResetKey(int keyNbr) {
 
         byte keyslot = (byte) (keyNbr % 256);
@@ -1107,6 +2026,29 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Initiates ownership transfer of the Satodime device.
+     *
+     * <p>This method prepares the Satodime for transfer to a new owner by generating
+     * new unlock credentials. After this operation, the current unlock secret becomes
+     * invalid and a new unlock secret is established.</p>
+     *
+     * <p>Transfer process:</p>
+     * <ol>
+     *   <li>Current owner calls this method with valid unlock code</li>
+     *   <li>Device generates new unlock secret</li>
+     *   <li>Old unlock secret becomes invalid</li>
+     *   <li>New owner receives device with new unlock secret</li>
+     * </ol>
+     *
+     * <p><strong>Important:</strong> After calling this method, the current unlock
+     * secret will no longer work. Ensure the new unlock secret is properly
+     * communicated to the new owner.</p>
+     *
+     * @return the APDU response containing new ownership credentials
+     * @see #setSatodimeUnlockSecret(byte[])
+     * @see #getSatodimeUnlockSecret()
+     */
     public APDUResponse satodimeInitiateOwnershipTransfer() {
 
         // compute unlock code
@@ -1133,6 +2075,24 @@ public class SatochipCommandSet {
      *            SEEDKEEPER                *
      ****************************************/
 
+    /**
+     * Retrieves the current status of the SeedKeeper applet.
+     *
+     * <p>This method queries the SeedKeeper for its operational status including:</p>
+     * <ul>
+     *   <li>Number of stored secrets</li>
+     *   <li>Total and available memory</li>
+     *   <li>Log information (total and available entries)</li>
+     *   <li>Setup completion status</li>
+     * </ul>
+     *
+     * <p>The status information is essential for managing secret storage capacity
+     * and monitoring device usage.</p>
+     *
+     * @return the SeedKeeper status object containing current state information
+     * @see SeedkeeperStatus
+     * @throws RuntimeException if the SeedKeeper is not properly initialized
+     */
     public SeedkeeperStatus seedkeeperGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SEEDKEEPER_STATUS, 0x00, 0x00, new byte[0]);
 
@@ -1146,14 +2106,24 @@ public class SatochipCommandSet {
     }
 
     /**
-     * This function generates a master seed randomly within the Seedkeeper
-     * DEPRECATED: use only for Seedkeeper v0.1, for Seedkeeper v0.2, use preferrably seedkeeperGenerateRandomSecret()
-     * <p>
-     * - parameter seedSize: seed size in byte (between 16-64)
-     * - parameter exportRights: export rights for generated secret
-     * - parameter label: label
-     * <p>
-     * - Returns: Response adpu & SeedkeeperSecretHeader data
+     * Generates a random master seed within the SeedKeeper.
+     *
+     * <p><strong>Deprecated:</strong> This method is only for SeedKeeper v0.1.
+     * For SeedKeeper v0.2 and later, use {@link #seedkeeperGenerateRandomSecret}
+     * which provides more flexibility and security options.</p>
+     *
+     * <p>This method generates a cryptographically secure random master seed
+     * directly on the device, ensuring the seed never exists in plaintext outside
+     * the secure element.</p>
+     *
+     * @param seedSize the seed size in bytes (16-64 bytes)
+     * @param exportRights the export rights policy for the generated secret
+     * @param label a human-readable label for the secret
+     * @return the secret header containing metadata about the generated seed
+     * @throws Exception if seed generation fails or parameters are invalid
+     * @see #seedkeeperGenerateRandomSecret
+     * @see SeedkeeperExportRights
+     * @deprecated Use seedkeeperGenerateRandomSecret for SeedKeeper v0.2+
      */
     public SeedkeeperSecretHeader seedkeeperGenerateMasterseed(int seedSize, SeedkeeperExportRights exportRights, String label) throws Exception {
         byte[] labelBytes = label.getBytes(StandardCharsets.UTF_8);
@@ -1199,6 +2169,37 @@ public class SatochipCommandSet {
         return header;
     }
 
+    /**
+     * Generates a random secret of specified type within the SeedKeeper.
+     *
+     * <p>This method creates cryptographically secure random secrets directly on the
+     * device with flexible type and security options. The secret never exists in
+     * plaintext outside the secure element during generation.</p>
+     *
+     * <p>Supported secret types include:</p>
+     * <ul>
+     *   <li>Master seeds for wallet derivation</li>
+     *   <li>BIP39 mnemonics</li>
+     *   <li>Private keys</li>
+     *   <li>Encryption keys</li>
+     *   <li>Passwords and other data</li>
+     * </ul>
+     *
+     * <p>Optional entropy can be provided to contribute to the randomness,
+     * and if saveEntropy is true, the entropy will be stored as a separate secret.</p>
+     *
+     * @param stype the type of secret to generate
+     * @param subtype subtype classification for the secret
+     * @param size the size of the secret in bytes (16-64)
+     * @param saveEntropy whether to save the provided entropy as a separate secret
+     * @param entropy additional entropy bytes to mix into generation
+     * @param exportRights the export rights policy for the generated secret
+     * @param label a human-readable label for the secret
+     * @return list of secret headers (main secret and optionally entropy secret)
+     * @throws Exception if generation fails or parameters are invalid
+     * @see SeedkeeperSecretType
+     * @see SeedkeeperExportRights
+     */
     public List<SeedkeeperSecretHeader> seedkeeperGenerateRandomSecret(
             SeedkeeperSecretType stype,
             byte subtype,
@@ -1287,6 +2288,28 @@ public class SatochipCommandSet {
         return headers;
     }
 
+    /**
+     * Imports a secret into the SeedKeeper with optional encryption.
+     *
+     * <p>This method allows importing external secrets into the SeedKeeper with
+     * support for both plaintext and encrypted import. For large secrets, the
+     * data is transmitted in chunks to accommodate APDU size limitations.</p>
+     *
+     * <p>Import modes:</p>
+     * <ul>
+     *   <li>Plaintext import - secret transmitted in clear (secure channel protection)</li>
+     *   <li>Encrypted import - secret pre-encrypted with device public key</li>
+     * </ul>
+     *
+     * <p>The import process includes integrity verification through fingerprint
+     * comparison to ensure data was transmitted correctly.</p>
+     *
+     * @param secretObject the secret object containing data, metadata, and optional encryption parameters
+     * @return the secret header with assigned secret ID
+     * @throws Exception if import fails, data is corrupted, or fingerprints don't match
+     * @see SeedkeeperSecretObject
+     * @see #seedkeeperExportSecret(int, Integer)
+     */
     public SeedkeeperSecretHeader seedkeeperImportSecret(
             SeedkeeperSecretObject secretObject
     ) throws Exception {
@@ -1427,6 +2450,29 @@ public class SatochipCommandSet {
         return secretHeader;
     }
 
+    /**
+     * Exports a secret from the SeedKeeper with optional encryption.
+     *
+     * <p>This method retrieves a stored secret from the SeedKeeper. The secret can be
+     * exported in plaintext (protected by secure channel) or encrypted with a public key
+     * for secure transfer between devices.</p>
+     *
+     * <p>Export modes:</p>
+     * <ul>
+     *   <li>Plaintext export (sidPubKey = null) - secret returned in clear over secure channel</li>
+     *   <li>Encrypted export (sidPubKey provided) - secret encrypted with specified public key</li>
+     * </ul>
+     *
+     * <p>For large secrets, the data is retrieved in chunks. The method includes integrity
+     * verification for plaintext exports to ensure data correctness.</p>
+     *
+     * @param sid the secret ID to export
+     * @param sidPubKey optional secret ID of public key for encryption, or null for plaintext
+     * @return the secret object containing data, metadata, and encryption parameters
+     * @throws Exception if export fails, secret not found, or export not permitted
+     * @see #seedkeeperImportSecret(SeedkeeperSecretObject)
+     * @see SeedkeeperExportRights
+     */
     public SeedkeeperSecretObject seedkeeperExportSecret(
             int sid,
             Integer sidPubKey
@@ -1537,6 +2583,30 @@ public class SatochipCommandSet {
         return secretObject;
     }
 
+    /**
+     * Exports a secret from SeedKeeper encrypted for import into Satochip.
+     *
+     * <p>This specialized export method prepares a secret for secure transfer to a
+     * Satochip device. The secret is encrypted using the Satochip's public key and
+     * includes all necessary parameters for import.</p>
+     *
+     * <p>The exported data includes:</p>
+     * <ul>
+     *   <li>Secret header with metadata</li>
+     *   <li>Initialization vector (IV) for encryption</li>
+     *   <li>Encrypted secret data</li>
+     *   <li>HMAC for authenticity verification</li>
+     * </ul>
+     *
+     * <p>This method is typically used for migrating secrets between SeedKeeper
+     * and Satochip devices securely.</p>
+     *
+     * @param sid the secret ID to export from SeedKeeper
+     * @param sidPubKey the secret ID of the Satochip's trusted public key
+     * @return the encrypted secret object ready for Satochip import
+     * @throws Exception if export fails or encryption parameters are invalid
+     * @see #seedkeeperExportSecret(int, Integer)
+     */
     public SeedkeeperSecretObject seedkeeperExportSecretToSatochip(
             int sid,
             Integer sidPubKey
@@ -1589,6 +2659,31 @@ public class SatochipCommandSet {
         return new SeedkeeperSecretObject(secretBytes, secretHeader, true, secretParams);
     }
 
+    /**
+     * Permanently deletes a secret from the SeedKeeper.
+     *
+     * <p>This method removes a secret and all its associated metadata from the
+     * SeedKeeper storage. The operation is irreversible and frees up storage
+     * space for new secrets.</p>
+     *
+     * <p><strong>Warning:</strong> This operation permanently destroys the secret.
+     * Ensure the secret is properly backed up if recovery might be needed.</p>
+     *
+     * <p>Use cases for secret reset:</p>
+     * <ul>
+     *   <li>Removing obsolete or unused secrets</li>
+     *   <li>Cleaning up storage space</li>
+     *   <li>Removing compromised secrets</li>
+     *   <li>Managing secret lifecycle</li>
+     * </ul>
+     *
+     * <p><strong>Compatibility:</strong> Seedkeeper v0.2 and higher.</p>
+     *
+     * @param sid the secret ID to delete
+     * @return the APDU response confirming deletion
+     * @throws APDUException if deletion fails or secret doesn't exist
+     * @see #seedkeeperListSecretHeaders()
+     */
     public APDUResponse seedkeeperResetSecret(int sid) throws APDUException {
         logger.info("SATOCHIPLIB: seedkeeperResetSecret");
 
@@ -1611,6 +2706,32 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Retrieves a list of all secret headers stored in the SeedKeeper.
+     *
+     * <p>This method returns metadata about all secrets without revealing the actual
+     * secret data. The headers include information such as:</p>
+     * <ul>
+     *   <li>Secret ID and type</li>
+     *   <li>Creation date and origin</li>
+     *   <li>Export rights and usage counters</li>
+     *   <li>Fingerprint for integrity verification</li>
+     *   <li>Human-readable labels</li>
+     * </ul>
+     *
+     * <p>This method is useful for:</p>
+     * <ul>
+     *   <li>Inventory management of stored secrets</li>
+     *   <li>Displaying secret lists to users</li>
+     *   <li>Checking available storage space</li>
+     *   <li>Auditing secret usage</li>
+     * </ul>
+     *
+     * @return list of secret headers for all stored secrets
+     * @throws Exception if retrieval fails or SeedKeeper is not initialized
+     * @see SeedkeeperSecretHeader
+     * @see #seedkeeperGetStatus()
+     */
     public List<SeedkeeperSecretHeader> seedkeeperListSecretHeaders() throws Exception {
         logger.info("SATOCHIPLIB: seedkeeperListSecretHeaders");
 
@@ -1654,6 +2775,30 @@ public class SatochipCommandSet {
         return secretHeaders;
     }
 
+    /**
+     * Retrieves operation logs from the SeedKeeper for auditing purposes.
+     *
+     * <p>This method returns a list of logged operations performed on the SeedKeeper.
+     * Logs provide an audit trail of device usage and can help with security monitoring
+     * and troubleshooting.</p>
+     *
+     * <p>Log entries typically include:</p>
+     * <ul>
+     *   <li>Operation type (import, export, generate, etc.)</li>
+     *   <li>Secret IDs involved</li>
+     *   <li>Operation status/result</li>
+     *   <li>Timestamp information</li>
+     * </ul>
+     *
+     * <p>The method can retrieve either just the latest log entry or all available
+     * log entries depending on the printAll parameter.</p>
+     *
+     * @param printAll if true, retrieve all available logs; if false, retrieve only the latest
+     * @return list of log entries from the SeedKeeper
+     * @throws Exception if log retrieval fails or SeedKeeper is not initialized
+     * @see SeedkeeperLog
+     * @see #seedkeeperGetStatus()
+     */
     public List<SeedkeeperLog> seedkeeperPrintLogs(Boolean printAll) throws Exception {
         boolean isPrintingAll = (printAll != null) ? printAll : true;
         byte[] data = new byte[]{};
@@ -1740,65 +2885,78 @@ public class SatochipCommandSet {
         return logs;
     }
 
-    public String getCardLabel() {
-        logger.info("SATOCHIPLIB: getCardLabel START");
-
-        APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x01, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU getCardLabel:"+ plainApdu.toHexString());
-        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU getCardLabel:"+ respApdu.toHexString());
-        int sw = respApdu.getSw();
-        String label;
-        if (sw == 0x9000){
-            byte labelSize = respApdu.getData()[0];
-            try {
-                label = new String(respApdu.getData(), 1, labelSize, StandardCharsets.UTF_8);
-            } catch (Exception e) {
-                logger.warning("SATOCHIPLIB: getCardLabel UnicodeDecodeError while decoding card label!");
-                label = new String(respApdu.getData(), 1, respApdu.getData().length - 1, StandardCharsets.UTF_8);
-            }
-        } else if (sw == 0x6D00) {
-            logger.info("SATOCHIPLIB: getCardLabel  label not set:" + sw);
-            label = "(none)";
-        } else {
-            logger.warning("SATOCHIPLIB: getCardLabel Error while recovering card label:" + sw);
-            label = "(unknown)";
-        }
-        return label;
-    }
-
-    public Boolean setCardLabel(String label) {
-        logger.info("SATOCHIPLIB: setCardLabel START");
-
-        byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
-        byte[] data = new byte[1 + labelData.length];
-        data[0] = (byte) labelData.length;
-        System.arraycopy(labelData, 0, data, 1, labelData.length);
-
-        APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x00, data);
-        logger.info("SATOCHIPLIB: C-APDU setCardLabel:"+ plainApdu.toHexString());
-        APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU setCardLabel:"+ respApdu.toHexString());
-        int sw = respApdu.getSw();
-        return sw == 0x9000;
-    }
-
     /****************************************
-    *            PKI commands              *
-    ****************************************/  
-    
+     *            PKI commands              *
+     ****************************************/
+
+    /**
+     * Exports the device's personalization public key.
+     *
+     * <p>This method retrieves the public key used for device personalization and
+     * PKI operations. This key is typically used for:</p>
+     * <ul>
+     *   <li>Device authentication and identity verification</li>
+     *   <li>Certificate chain validation</li>
+     *   <li>Secure communication with personalization systems</li>
+     *   <li>Challenge-response authentication protocols</li>
+     * </ul>
+     *
+     * <p>The public key is usually set during device manufacturing and cannot
+     * be changed by end users.</p>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip version v0.12-0.5 and higher</li>
+     *   <li>All Satodime versions</li>
+     *   <li>All Seedkeeper versions</li>
+     * </ul>
+     *
+     * @return the APDU response containing the personalization public key
+     * @see #cardExportPersoCertificate()
+     * @see #cardChallengeResponsePerso(byte[])
+     */
     public APDUResponse cardExportPersoPubkey(){
-        
+
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_PUBKEY, 0x00, 0x00, new byte[0]);
         logger.info("SATOCHIPLIB: C-APDU cardExportPersoPubkey:"+ plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardExportPersoPubkey:"+ respApdu.toHexString());
-        
+
         return respApdu;
     }
-    
+
+    /**
+     * Exports the device's personalization certificate in PEM format.
+     *
+     * <p>This method retrieves the X.509 certificate associated with the device's
+     * personalization key. The certificate is transmitted in chunks due to APDU
+     * size limitations and assembled into a complete PEM-formatted certificate.</p>
+     *
+     * <p>The certificate contains:</p>
+     * <ul>
+     *   <li>Device public key</li>
+     *   <li>Certificate authority signatures</li>
+     *   <li>Device identification information</li>
+     *   <li>Validity periods and usage constraints</li>
+     * </ul>
+     *
+     * <p>This certificate can be used to verify device authenticity and establish
+     * trust in the device's cryptographic operations.</p>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip version v0.12-0.5 and higher</li>
+     *   <li>All Satodime versions</li>
+     *   <li>All Seedkeeper versions</li>
+     * </ul>
+     *
+     * @return the complete certificate in PEM format, or error message if failed
+     * @throws APDUException if certificate retrieval fails
+     * @see #cardExportPersoPubkey()
+     * @see #cardVerifyAuthenticity()
+     */
     public String cardExportPersoCertificate() throws APDUException {
-        
+
         // init
         byte p1 = 0x00;
         byte p2 = 0x01; // init
@@ -1821,11 +2979,11 @@ public class SatochipCommandSet {
             logger.warning("SATOCHIPLIB: Error during personalization certificate export: no card present(0x0000)");
             return "Error during personalization certificate export: no card present(0x0000)";
         }
-        
+
         if (certificate_size==0){
             return ""; //new byte[0]; //"(empty)";
-        }               
-        
+        }
+
         // UPDATE apdu: certificate data in chunks
         p2= 0x02; //update
         byte[] certificate = new byte[certificate_size];//certificate_size*[0]
@@ -1851,7 +3009,7 @@ public class SatochipCommandSet {
             remaining_size-=chunk_size;
             cert_offset+=chunk_size;
         }
-        
+
         // last chunk
         data[0]= (byte) ((cert_offset>>8)&0xFF);
         data[1]= (byte) (cert_offset&0xFF);
@@ -1866,33 +3024,91 @@ public class SatochipCommandSet {
         response= respApdu.getData();
         System.arraycopy(response, 0, certificate, cert_offset, remaining_size);
         cert_offset+=remaining_size;
-        
+
         // parse and return raw certificate
         String cert_pem= parser.convertBytesToStringPem(certificate);
         logger.warning("SATOCHIPLIB: cardExportPersoCertificate checking certificate:" + Arrays.toString(certificate));
 
         return cert_pem;
     }
-    
+
+    /**
+     * Performs a challenge-response authentication with the card's personalization key.
+     *
+     * <p>This method executes a cryptographic challenge-response protocol to verify that the
+     * card possesses the private key corresponding to its personalization certificate. The
+     * challenge is signed by the card using its private key, and the signature can be verified
+     * using the card's public key.</p>
+     *
+     * <p>This operation is typically used as part of the card authentication process to ensure
+     * the card is genuine and hasn't been cloned or tampered with.</p>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip version v0.12-0.5 and higher</li>
+     *   <li>All Satodime versions</li>
+     *   <li>All Seedkeeper versions</li>
+     * </ul>
+     *
+     * @param challenge_from_host a byte array containing the challenge data to be signed by the card.
+     *                           Typically 32 bytes of random data generated by the host
+     * @return an {@link APDUResponse} containing the card's challenge response and signature
+     *         in the response data field
+     * @see APDUResponse
+     * @see #cardVerifyAuthenticity()
+     */
     public APDUResponse cardChallengeResponsePerso(byte[] challenge_from_host){
-        
+
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHALLENGE_RESPONSE_PKI, 0x00, 0x00, challenge_from_host);
         logger.info("SATOCHIPLIB: C-APDU cardChallengeResponsePerso:"+ plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardChallengeResponsePerso:"+ respApdu.toHexString());
-        
+
         return respApdu;
     }
-    
+
+    /**
+     * Performs complete authenticity verification of the card.
+     *
+     * <p>This method executes a comprehensive authentication process to verify that the card
+     * is genuine and has not been tampered with. The verification process includes:</p>
+     * <ul>
+     *   <li>Retrieving the card's personalization certificate</li>
+     *   <li>Validating the certificate chain against trusted root certificates</li>
+     *   <li>Performing challenge-response authentication to verify key possession</li>
+     *   <li>Ensuring the certificate matches the card's actual cryptographic capabilities</li>
+     * </ul>
+     *
+     * <p>The method uses embedded certificate authority certificates to validate the full
+     * certificate chain, ensuring the card was properly personalized by an authorized entity.</p>
+     *
+     * <p><strong>Compatibility:</strong></p>
+     * <ul>
+     *   <li>Satochip version v0.12-0.5 and higher</li>
+     *   <li>All Satodime versions</li>
+     *   <li>All Seedkeeper versions</li>
+     * </ul>
+     *
+     * @return a {@link String} array containing verification results:
+     *         <ul>
+     *           <li>Index 0: "OK" if verification succeeds, "FAIL" if it fails</li>
+     *           <li>Index 1: Root CA certificate details</li>
+     *           <li>Index 2: Sub-CA certificate details</li>
+     *           <li>Index 3: Device certificate details</li>
+     *           <li>Index 4: Error message (empty if verification succeeds)</li>
+     *         </ul>
+     * @see #cardExportPersoCertificate()
+     * @see #cardChallengeResponsePerso(byte[])
+     */
     public String[] cardVerifyAuthenticity(){
-        
+
         String txt_error="";
         String txt_ca="(empty)";
         String txt_subca="(empty)";
         String txt_device="(empty)";
         final String FAIL= "FAIL";
         final String OK= "OK";
-        
+
         // get certificate from device
         String cert_pem="";
         try{
@@ -1906,13 +3122,13 @@ public class SatochipCommandSet {
             String[] out = new String [] {FAIL, txt_ca, txt_subca, txt_device, txt_error};
             return out;
         }
-        
+
         // verify certificate chain
         boolean isValidated= false;
         PublicKey pubkeyDevice= null;
         try{
             // load certs
-            InputStream isCa = this.getClass().getClassLoader().getResourceAsStream("cert/ca.cert");  
+            InputStream isCa = this.getClass().getClassLoader().getResourceAsStream("cert/ca.cert");
             InputStream isSubca;
             if (cardType.equals("satochip")) {
                 isSubca = this.getClass().getClassLoader().getResourceAsStream("cert/subca-satochip.cert");
@@ -1934,23 +3150,23 @@ public class SatochipCommandSet {
             logger.warning("SATOCHIPLIB: certDevice: " + certDevice);
             txt_device= certDevice.toString();
             logger.warning("SATOCHIPLIB: txtCertDevice: " + txt_device);
-            
+
             pubkeyDevice= certDevice.getPublicKey();
             logger.warning("SATOCHIPLIB: certDevice pubkey: " + pubkeyDevice.toString());
-            
+
             // cert chain
             Certificate[] chain= new Certificate[2];
             chain[0]= certDevice;
             chain[1]= certSubca;
             CertPath certPath = certificateFactory.generateCertPath(Arrays.asList(chain));
-            
+
             // keystore
             KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
             ks.load(null, null);
             KeyStore.TrustedCertificateEntry tcEntry= new KeyStore.TrustedCertificateEntry(certCa);
             //KeyStore.TrustedCertificateEntry tcEntry= new KeyStore.TrustedCertificateEntry(certSubca);
             ks.setEntry("SatodimeCA", tcEntry, null);
-            
+
             // validator
             PKIXParameters params = new PKIXParameters(ks);
             params.setRevocationEnabled(false);
@@ -1958,7 +3174,7 @@ public class SatochipCommandSet {
             certValidator.validate(certPath, params);
             isValidated=true;
             logger.info("SATOCHIPLIB: Certificate chain validated!");
-            
+
         }catch (Exception e){
             logger.warning("SATOCHIPLIB: Exception in cardVerifyAuthenticity:"+ e);
             e.printStackTrace();
@@ -1967,7 +3183,7 @@ public class SatochipCommandSet {
             String[] out = new String [] {FAIL, txt_ca, txt_subca, txt_device, txt_error};
             return out;
         }
-        
+
         // perform challenge-response with the card to ensure that the key is correctly loaded in the device
         try{
             SecureRandom random = new SecureRandom();
@@ -1977,7 +3193,7 @@ public class SatochipCommandSet {
             byte[][] parsedData= parser.parseVerifyChallengeResponsePerso(rapduChalresp);
             byte[] challenge_from_device= parsedData[0];
             byte[] sig= parsedData[1];
-            
+
             // build challenge byte[]
             int offset=0;
             String chalHeaderString=  "Challenge:";
@@ -1988,7 +3204,7 @@ public class SatochipCommandSet {
             System.arraycopy(challenge_from_device, 0, chalFullBytes, offset, 32);
             offset+= 32;
             System.arraycopy(challenge_from_host, 0, chalFullBytes, offset, 32);
-            
+
             // verify sig with pubkeyDevice
             byte[] pubkey= new byte[65];
             byte[] pubkeyEncoded= pubkeyDevice.getEncoded();
@@ -2004,9 +3220,10 @@ public class SatochipCommandSet {
             txt_error= "Failed to verify challenge-response! \r\n\r\n" + e.toString();
             String[] out = new String [] {FAIL, txt_ca, txt_subca, txt_device, txt_error};
             return out;
-        }       
-        
+        }
+
         String[] out =  new String [] {OK, txt_ca, txt_subca, txt_device, txt_error};
         return out;
     }
+
 }
