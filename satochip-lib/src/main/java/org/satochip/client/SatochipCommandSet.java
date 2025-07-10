@@ -3,15 +3,14 @@ package org.satochip.client;
 import org.bitcoinj.core.Base58;
 import org.bitcoinj.core.Sha256Hash;
 import org.bouncycastle.crypto.digests.RIPEMD160Digest;
+import org.satochip.client.satocash.*;
 import org.satochip.client.seedkeeper.*;
 import org.satochip.io.*;
 import org.bouncycastle.util.encoders.Hex;
 
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.io.IOException;
@@ -98,10 +97,7 @@ public class SatochipCommandSet {
     public static final byte[] SATOCHIP_AID = Hex.decode("5361746f43686970"); //SatoChip
     public static final byte[] SEEDKEEPER_AID = Hex.decode("536565644b6565706572"); //SeedKeeper
     public static final byte[] SATODIME_AID = Hex.decode("5361746f44696d65"); //SatoDime
-
-    public final static byte DERIVE_P1_SOURCE_MASTER = (byte) 0x00;
-    public final static byte DERIVE_P1_SOURCE_PARENT = (byte) 0x40;
-    public final static byte DERIVE_P1_SOURCE_CURRENT = (byte) 0x80;
+    public static final byte[] SATOCASH_AID = Hex.decode("5361746f63617368"); //Satocash
 
     /**
      * Creates a new SatochipCommandSet instance with the specified APDU channel.
@@ -491,8 +487,11 @@ public class SatochipCommandSet {
             if (rapdu.getSw() != 0x9000) {
                 rapdu = cardSelect("satodime");
                 if (rapdu.getSw() != 0x9000) {
-                    this.cardType = "unknown";
-                    logger.warning("SATOCHIPLIB: CardSelect: could not select a known applet");
+                    rapdu = cardSelect("satocash");
+                    if (rapdu.getSw() != 0x9000) {
+                        this.cardType = "unknown";
+                        logger.warning("SATOCHIPLIB: CardSelect: could not select a known applet");
+                    }
                 }
             }
         }
@@ -508,6 +507,7 @@ public class SatochipCommandSet {
      *   <li>"satochip" - Satochip wallet applet</li>
      *   <li>"seedkeeper" - SeedKeeper secret storage applet</li>
      *   <li>"satodime" - Satodime bearer bond applet</li>
+     *   <li>"satocash" - Cashu wallet</li>
      * </ul>
      *
      * @param cardType the type of applet to select
@@ -522,8 +522,10 @@ public class SatochipCommandSet {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATOCHIP_AID);
         } else if (cardType.equals("seedkeeper")) {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SEEDKEEPER_AID);
-        } else {
+        } else if (cardType.equals("satodime")) {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATODIME_AID);
+        } else {
+            selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATOCASH_AID);
         }
 
         logger.info("SATOCHIPLIB: C-APDU cardSelect:" + selectApplet.toHexString());
@@ -2883,6 +2885,369 @@ public class SatochipCommandSet {
 //        return result;
 
         return logs;
+    }
+
+
+    /****************************************
+     *             SATOCASH                 *
+     ****************************************/
+
+    /**
+     * Retrieves the current status of the Satocash applet.
+     *
+     * <p>This method queries the Satocash for its current state including:</p>
+     * <ul>
+     *   <li>Setup completion status</li>
+     *   <li>Seed initialization status</li>
+     *   <li>Protocol and applet version information</li>
+     *   <li>PIN retry counters</li>
+     *   <li>Number of mints, keysets, and proofs</li>
+     *   <li>Memory usage statistics</li>
+     * </ul>
+     *
+     * <p>The status is automatically cached in the internal satocashStatus object.</p>
+     *
+     * @param sendEncrypted whether to send the command over the secure channel (default: true)
+     * @throws Exception if communication fails or status retrieval fails
+     * @see SatocashStatus
+     */
+    public SatocashStatus satocashGetStatus(boolean sendEncrypted) throws Exception {
+        logger.info("SATOCHIPLIB: satocashGetStatus");
+
+        APDUCommand capdu = new APDUCommand((byte) 0xB0, Constants.satocashGetStatus, (byte) 0x00, (byte) 0x00, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        logger.info("SATOCHIPLIB: R-APDU satocashGetStatus: " + rapdu.toHexString());
+        rapdu.checkOK();
+
+        return new SatocashStatus(rapdu);
+    }
+
+    /**
+     * Imports a mint URL into the Satocash applet.
+     *
+     * <p>This method stores a mint URL on the card for use in Cashu token operations.
+     * The mint URL is used to identify which mint server to interact with for token
+     * minting and spending operations.</p>
+     *
+     * @param mintUrl the mint URL to import (UTF-8 encoded string)
+     * @return the assigned mint index
+     * @throws Exception if the import fails or URL is invalid
+     */
+    public byte satocashImportMint(String mintUrl) throws Exception {
+        logger.info("SATOCHIPLIB: satocashImportMint");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashImportMint;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        byte[] mintUrlBytes = mintUrl.getBytes(StandardCharsets.UTF_8);
+        byte[] data = new byte[1 + mintUrlBytes.length];
+        data[0] = (byte) mintUrlBytes.length;
+        System.arraycopy(mintUrlBytes, 0, data, 1, mintUrlBytes.length);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        return response[0];
+    }
+
+    /**
+     * Exports a mint URL from the Satocash applet.
+     *
+     * @param index the index of the mint to export
+     * @return the mint URL
+     * @throws Exception if the export fails or index is invalid
+     */
+    public String satocashExportMint(byte index) throws Exception {
+        logger.info("SATOCHIPLIB: satocashExportMint");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashExportMint;
+        byte p1 = index;
+        byte p2 = (byte) 0x00;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] data = rapdu.getData();
+        int urlSize = data[0] & 0xFF;
+        byte[] urlBytes = new byte[urlSize];
+        System.arraycopy(data, 1, urlBytes, 0, urlSize);
+
+        try {
+            return new String(urlBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // fallback to hex if UTF-8 decode fails
+            String urlHex = SatochipParser.toHexString(urlBytes);
+            return urlHex;
+        }
+    }
+
+    /**
+     * Removes a mint from the Satocash applet.
+     *
+     * @param index the index of the mint to remove
+     * @throws Exception if the removal fails
+     */
+    public void satocashRemoveMint(byte index) throws Exception {
+        logger.info("SATOCHIPLIB: satocashRemoveMint");
+
+        byte cla = (byte) 0xB0;
+        byte ins = (byte) Constants.satocashRemoveMint;
+        byte p1 = index;
+        byte p2 = (byte) 0x00;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+    }
+
+    /**
+     * Imports a keyset into the Satocash applet.
+     *
+     * @param keysetIdBytes the 8-byte keyset ID
+     * @param mintIndex the index of the associated mint
+     * @param unit the unit type for this keyset
+     * @return the assigned keyset index
+     * @throws Exception if the import fails
+     */
+    public byte satocashImportKeyset(byte[] keysetIdBytes, byte mintIndex, byte unit) throws Exception {
+        logger.info("SATOCHIPLIB: satocashImportKeyset");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashImportKeyset;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        byte[] data = new byte[keysetIdBytes.length + 2];
+        System.arraycopy(keysetIdBytes, 0, data, 0, keysetIdBytes.length);
+        data[keysetIdBytes.length] = mintIndex;
+        data[keysetIdBytes.length + 1] = unit;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        return response[0];
+    }
+
+    /**
+     * Exports keysets from the Satocash applet.
+     *
+     * @param indexes the array of keyset indexes to export
+     * @return a map of keyset index to SatocashKeyset
+     * @throws Exception if the export fails
+     */
+    public Map<Byte, SatocashKeyset> satocashExportKeysets(byte[] indexes) throws Exception {
+        logger.info("SATOCHIPLIB: satocashExportKeysets");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashExportKeyset;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        byte[] data = new byte[1 + indexes.length];
+        data[0] = (byte) indexes.length;
+        System.arraycopy(indexes, 0, data, 1, indexes.length);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        if (response.length != indexes.length * 11) {
+            throw new RuntimeException("Wrong export keysets size: " + response.length +
+                    ", expected: " + (indexes.length * 11));
+        }
+
+        Map<Byte, SatocashKeyset> keysetMap = new HashMap<>();
+        for (int i = 0; i < indexes.length; i++) {
+            int pos = 11 * i;
+            byte[] keysetBytes = new byte[11];
+            System.arraycopy(response, pos, keysetBytes, 0, 11);
+            SatocashKeyset keyset = new SatocashKeyset(keysetBytes);
+            keysetMap.put(keyset.getIndex(), keyset);
+        }
+
+        return keysetMap;
+    }
+
+    /**
+     * Removes a keyset from the Satocash applet.
+     *
+     * @param index the index of the keyset to remove
+     * @throws Exception if the removal fails
+     */
+    public void satocashRemoveKeyset(byte index) throws Exception {
+        logger.info("SATOCHIPLIB: satocashRemoveKeyset");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashRemoveKeyset;
+        byte p1 = index;
+        byte p2 = (byte) 0x00;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+    }
+
+    /**
+     * Imports a proof into the Satocash applet.
+     *
+     * @param keysetIndex the index of the keyset to use
+     * @param amountExponent the amount exponent
+     * @param secretBytes the 32-byte secret
+     * @param unblindedKeyBytes the 33-byte unblinded key
+     * @return the assigned proof index (as 16-bit integer)
+     * @throws Exception if the import fails
+     */
+    public int satocashImportProof(byte keysetIndex, byte amountExponent,
+                                   byte[] secretBytes, byte[] unblindedKeyBytes) throws Exception {
+        logger.info("SATOCHIPLIB: satocashImportProof");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashImportProof;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        // data: [keyset_index(1b) | amount_exponent(1b) | unblinded_key(33b) | secret(32b)]
+        byte[] data = new byte[2 + unblindedKeyBytes.length + secretBytes.length];
+        data[0] = keysetIndex;
+        data[1] = amountExponent;
+        System.arraycopy(unblindedKeyBytes, 0, data, 2, unblindedKeyBytes.length);
+        System.arraycopy(secretBytes, 0, data, 2 + unblindedKeyBytes.length, secretBytes.length);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        return ((response[0] & 0xFF) << 8) + (response[1] & 0xFF);
+    }
+
+    /**
+     * Exports proofs from the Satocash applet.
+     *
+     * @param indexes the array of proof indexes to export
+     * @return a map of proof index to SatocashProof
+     * @throws Exception if the export fails
+     */
+    public Map<Integer, SatocashProof> satocashExportProofs(int[] indexes) throws Exception {
+        logger.info("SATOCHIPLIB: satocashExportProofs");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashExportProofs;
+        byte p1 = (byte) 0x00;
+
+        // OP_INIT
+        byte p2 = (byte) 0x01;
+
+        // data (OP_INIT): [ proof_index_list_size(1b) | proof_index(2b) ... | 2FA_size(1b) | 2FA ]
+        byte[] data = new byte[1 + indexes.length * 2 + 1]; // +1 for 2FA_size of 0
+        data[0] = (byte) indexes.length;
+        for (int i = 0; i < indexes.length; i++) {
+            data[1 + i * 2] = (byte) (indexes[i] >> 8);
+            data[1 + i * 2 + 1] = (byte) (indexes[i] & 0xFF);
+        }
+        data[data.length - 1] = 0; // 2FA_size = 0
+
+        int proofCounter = 0;
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse into proofs
+        Map<Integer, SatocashProof> proofMap = new HashMap<>();
+        byte[] response = rapdu.getData();
+        int pos = 0;
+        while (pos < response.length) {
+            if (pos + 70 <= response.length) {
+                byte[] proofBytes = new byte[70];
+                System.arraycopy(response, pos, proofBytes, 0, 70);
+                try {
+                    SatocashProof proof = new SatocashProof(proofBytes);
+                    proofMap.put(proof.getIndex(), proof);
+                    proofCounter++;
+                } catch (Exception e) {
+                    logger.warning("Failed to parse proof at position " + pos + ": " + e.getMessage());
+                }
+            }
+            pos += 70;
+        }
+
+        // OP_PROCESS
+        p2 = (byte) 0x02;
+
+        while (true) {
+            // check if all proofs have been recovered
+            if (proofCounter == indexes.length) {
+                return proofMap;
+            }
+
+            capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+            rapdu = this.cardTransmit(capdu);
+            rapdu.checkOK();
+
+            pos = 0;
+            response = rapdu.getData();
+            while (pos < response.length) {
+                if (pos + 70 <= response.length) {
+                    byte[] proofBytes = new byte[70];
+                    System.arraycopy(response, pos, proofBytes, 0, 70);
+                    try {
+                        SatocashProof proof = new SatocashProof(proofBytes);
+                        proofMap.put(proof.getIndex(), proof);
+                        proofCounter++;
+                    } catch (Exception e) {
+                        logger.warning("Failed to parse proof at position " + pos + ": " + e.getMessage());
+                    }
+                }
+                pos += 70;
+            }
+        }
+    }
+
+    /**
+     * Gets proof information from the Satocash applet.
+     *
+     * @param unit the unit type to query
+     * @param infoType the type of information to retrieve
+     * @param indexStart the starting index for the query
+     * @param indexSize the number of items to query
+     * @return the raw proof information data
+     * @throws Exception if the query fails
+     */
+    public byte[] satocashGetProofInfo(byte unit, byte infoType, int indexStart, int indexSize) throws Exception {
+        logger.info("SATOCHIPLIB: satocashGetProofInfo");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashGetProofInfo;
+        byte p1 = unit;
+        byte p2 = infoType;
+
+        byte[] data = new byte[4];
+        data[0] = (byte) (indexStart >> 8);
+        data[1] = (byte) (indexStart & 0xFF);
+        data[2] = (byte) (indexSize >> 8);
+        data[3] = (byte) (indexSize & 0xFF);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        return rapdu.getData();
     }
 
     /****************************************
