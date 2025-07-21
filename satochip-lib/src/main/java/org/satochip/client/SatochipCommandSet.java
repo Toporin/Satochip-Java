@@ -870,7 +870,9 @@ public class SatochipCommandSet {
         } else {
             throw new RuntimeException("Wrong challenge-response length (should be 20)");
         }
-        APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_TRANSACTION_HASH, keynbr, 0x00, data);
+        // This does not match the APDU command in the python library
+        // APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_TRANSACTION_HASH, keynbr, 0x00, data);
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_TRANSACTION_HASH, 0xff, 0x00, data);
 
         logger.info("SATOCHIPLIB: C-APDU cardSignTransactionHash:" + plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
