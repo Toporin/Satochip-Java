@@ -2,8 +2,12 @@ package org.satochip.client.satocash;
 
 public class SatocashProof {
 
+    public static byte MASK_SPENT_STATUS = (byte)0x03;
+    public static byte MASK_P2PK_STATUS = (byte)0x80;
+
     private int index = 0; // Using int instead of short for unsigned 16-bit
     private byte state = 0;
+    private boolean is_P2PK = false;
     private byte keysetIndex = 0;
     private byte amountExponent = 0;
     private int amount = 0;
@@ -18,7 +22,8 @@ public class SatocashProof {
 
         // Convert unsigned bytes to int for index calculation
         index = ((bytes[0] & 0xFF) << 8) + (bytes[1] & 0xFF);
-        state = bytes[2]; // todo check
+        state = (byte) (bytes[2] & MASK_SPENT_STATUS); // extract 2 least significant bits as proof spending status (empty/unspent/spent/rfu).
+        is_P2PK = ((bytes[2] & MASK_P2PK_STATUS) == MASK_P2PK_STATUS); // extract most significant bit as P2PK flag.
         keysetIndex = bytes[3];
         amountExponent = bytes[4]; // todo check and parse?
 
@@ -52,6 +57,14 @@ public class SatocashProof {
 
     public void setState(byte state) {
         this.state = state;
+    }
+
+    public boolean isP2PK() {
+        return is_P2PK;
+    }
+
+    public void setP2PK(boolean is_P2PK) {
+        this.is_P2PK = is_P2PK;
     }
 
     public byte getKeysetIndex() {
