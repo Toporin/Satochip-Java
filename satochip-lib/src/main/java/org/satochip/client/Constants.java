@@ -16,18 +16,22 @@ public final class Constants {
     * Instruction codes *
     ****************************************/
     public final static byte CLA =  (byte)0xB0;
+
     // Applet initialization
     public final static byte INS_SETUP = (byte) 0x2A;
+
     // Key use and management
     public final static byte INS_IMPORT_KEY = (byte) 0x32;
     public final static byte INS_RESET_KEY = (byte) 0x33;
     public final static byte INS_GET_PUBLIC_FROM_PRIVATE= (byte)0x35;
+
     // External authentication
     public final static byte INS_CREATE_PIN = (byte) 0x40; //TODO: remove?
     public final static byte INS_VERIFY_PIN = (byte) 0x42;
     public final static byte INS_CHANGE_PIN = (byte) 0x44;
     public final static byte INS_UNBLOCK_PIN = (byte) 0x46;
     public final static byte INS_LOGOUT_ALL = (byte) 0x60;
+
     // Status information
     public final static byte INS_LIST_PINS = (byte) 0x48;
     public final static byte INS_GET_STATUS = (byte) 0x3C;
@@ -35,6 +39,7 @@ public final class Constants {
     public final static byte INS_SET_NFC_POLICY = (byte)0x3E;
     public final static byte INS_SET_NDEF = (byte)0x3F;
     public final static byte INS_SET_PIN_POLICY = (byte)0x3A;
+
     // HD wallet
     public final static byte INS_BIP32_IMPORT_SEED= (byte) 0x6C;
     public final static byte INS_BIP32_RESET_SEED= (byte) 0x77;
@@ -50,14 +55,21 @@ public final class Constants {
     public final static byte INS_SET_2FA_KEY = (byte) 0x79;    
     public final static byte INS_RESET_2FA_KEY = (byte) 0x78;
     public final static byte INS_SIGN_TRANSACTION_HASH= (byte) 0x7A;
+    public final static byte INS_TAPROOT_TWEAK_PRIVKEY= (byte) 0x7C;
+    public final static byte INS_SIGN_SCHNORR_HASH= (byte) 0x7B;
+    public final static byte INS_MUSIG2_GENERATE_NONCE= (byte) 0x7E;
+    public final static byte INS_MUSIG2_SIGN_HASH= (byte) 0x7F;
+
     // secure channel
     public final static byte INS_INIT_SECURE_CHANNEL = (byte) 0x81;
     public final static byte INS_PROCESS_SECURE_CHANNEL = (byte) 0x82;
+
     // secure import from SeedKeeper
     public final static byte INS_IMPORT_ENCRYPTED_SECRET = (byte) 0xAC;
     public final static byte INS_IMPORT_TRUSTED_PUBKEY = (byte) 0xAA;
     public final static byte INS_EXPORT_TRUSTED_PUBKEY = (byte) 0xAB;
     public final static byte INS_EXPORT_AUTHENTIKEY= (byte) 0xAD;
+
     // Personalization PKI support
     public final static byte INS_IMPORT_PKI_CERTIFICATE = (byte) 0x92;
     public final static byte INS_EXPORT_PKI_CERTIFICATE = (byte) 0x93;
@@ -65,6 +77,7 @@ public final class Constants {
     public final static byte INS_EXPORT_PKI_PUBKEY = (byte) 0x98;
     public final static byte INS_LOCK_PKI = (byte) 0x99;
     public final static byte INS_CHALLENGE_RESPONSE_PKI= (byte) 0x9A;
+
     // reset to factory settings
     public final static byte INS_RESET_TO_FACTORY = (byte) 0xFF;
 

@@ -1624,8 +1624,297 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
-    // TODO: add Schnorr signatures
-    // TODO: add MuSig2 signatures
+
+    /**
+     * This function generates a tweaked private keys, as used in Bitcoin taproot (TapTweak).
+     * See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
+     * See also https://bitcoinops.org/img/posts/taproot-workshop/taproot-workshop.pdf
+     *
+     * A private key must first be available, either from a keyslot or
+     * derived from a BIP32 seed using cardBip32GetExtendedKey().
+     * The chip then stores the tweaked key in a dedicated keyslot and available next for schnorr signing.
+     * The function returns the public key corresponding to the private key.
+     *
+     * @param keynbr key number or 0xFF for the last derived Bip32 extended key
+     * @param tweak tweak data (32b)
+     * @param bypass_flag if set to True, the tweak is bypassed and the private key is used as is (for example for Nostr signatures)
+     * @return the tweaked public key as 65 bytes (uncompressed public)
+     * @throws IllegalArgumentException
+     * @throws APDUException if command APDU fails
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     *
+     */
+    private byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag) throws Exception {
+
+        if (tweak.length != 32) {
+            throw new IllegalArgumentException("Wrong tweak length (should be 32)");
+        }
+
+        //data: [tweak_size (1b) | tweak data (32b)]
+        byte[] data = new byte[33];
+        int offset = 0;
+        data[offset++] = (byte) 32;
+        System.arraycopy(tweak, 0, data, offset, 32);
+        offset += 32;
+
+        int p1 = keynbr;
+        int p2 = bypass_flag? 0x01 : 0x00;
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_TAPROOT_TWEAK_PRIVKEY, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU TaprootTweakPrivateKey:" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU TaprootTweakPrivateKey:" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse & return response
+        byte[] rapdu_bytes = rapdu.getData();
+        int pubkey_size = 256*rapdu_bytes[0] + rapdu_bytes[1];
+        byte[] pubkey_bytes = new byte[pubkey_size];
+        System.arraycopy(rapdu_bytes, 2, pubkey_bytes, 0, pubkey_size);
+        return pubkey_bytes;
+    }
+
+    /**
+     * Signs a hash using Schnorr algorithm as specified in BIP340.
+     * See https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki.
+     *
+     * <p>This method creates a Schnorr signature for a hash using the last
+     * tweaked key. </p>
+     *
+     * <p>Card exception codes:</p>
+     * <ul>
+     *    <li>9C06 SW_UNAUTHORIZED</li>
+     *    <li>9C4A SW_FEATURE_DISABLED</li>
+     *    <li>6700 SW_WRONG_LENGTH</li>
+     *    <li>9C09 SW_INCORRECT_ALG</li>
+     *    <li>9C0B SW_SIGNATURE_INVALID</li>
+     * </ul>
+     *
+     * @param txhash the 32-byte hash to sign
+     * @param chalresponse optional 20-byte 2FA challenge response, or null
+     * @return the 64-byte signature
+     * @throws IllegalArgumentException if txhash is not 32 bytes or chalresponse is not 20 bytes or null
+     * @throws APDUException if command APDU fails
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     * @see #cardTaprootTweakPrivateKey(int, byte[], Boolean)
+     *
+     */
+    public byte[] cardSignSchnorrHash(byte[] txhash, byte[] chalresponse) throws Exception {
+
+        byte[] data;
+        if (txhash.length != 32) {
+            throw new IllegalArgumentException("Wrong txhash length (should be 32)");
+        }
+        if (chalresponse == null) {
+            data = new byte[32];
+            System.arraycopy(txhash, 0, data, 0, txhash.length);
+        } else if (chalresponse.length == 20) {
+            data = new byte[32 + 2 + 20];
+            int offset = 0;
+            System.arraycopy(txhash, 0, data, offset, txhash.length);
+            offset += 32;
+            data[offset++] = (byte) 0x80; // 2 middle bytes for 2FA flag
+            data[offset++] = (byte) 0x00;
+            System.arraycopy(chalresponse, 0, data, offset, chalresponse.length);
+        } else {
+            throw new IllegalArgumentException("Wrong challenge-response length (should be 20)");
+        }
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_SCHNORR_HASH, 0x00, 0x00, data);
+
+        logger.info("SATOCHIPLIB: C-APDU cardSignSchnorrHash:" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardSignSchnorrHash:" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse & return response
+        return rapdu.getData(); // return signature as 64 bytes
+    }
+
+    /**
+     *
+     * This function generate a MuSig2 nonce for the currently available private key stored in the Satochip.
+     * Generation is based on the BIP-0327 specification: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki.
+     *
+     * A private key must first be available, either from a keyslot or
+     * derived from a BIP32 seed using getBIP32ExtendedKey().
+     *
+     * The function returns the corresponding public nonce (pubnonce) and the encrypted secret nonce blob (secnonce).
+     * The encrypted secnonce is returned by the chip for later use during the signing phase.
+     *
+     * <p>Card exception codes:</p>
+     * <ul>
+     *    <li>9C06 SW_UNAUTHORIZED</li>
+     *    <li>9C4A SW_FEATURE_DISABLED</li>
+     *    <li>9C44 SW_BIP327_WRONG_SECNONCE</li>
+     *    <li>9C10 SW_INCORRECT_P1</li>
+     *    <li>9C14 SW_BIP32_UNINITIALIZED_SEED</li>
+     *    <li>9C09 SW_INCORRECT_ALG</li>
+     *    <li>6700  SW_WRONG_LENGTH</li>
+     *    <li>9C0F SW_INVALID_PARAMETER</li>
+     *    <li>9C46 SW_BIP327_COUNTER_OVERFLOW</li>
+     * </ul>
+     *
+     * @param keynbr the key to use (0xFF for bip32 extended key)
+     * @param aggpk the x-only aggregate public key
+     * @param msg the message (should be 127-bytes or less)
+     * @param extra auxiliary input (should be 127-bytes or less)
+     * @return array containing [pubnonce, encrypted_sec_nonce]
+     * @throws IllegalArgumentException
+     * @throws APDUException if command APDU fails
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     *
+     */
+    private byte[][] cardMusig2GenerateNonce(int keynbr, byte[] aggpk, byte[] msg, byte[] extra) throws APDUException {
+
+        // check inputs
+        if (aggpk.length != 32) {
+            throw new IllegalArgumentException("Wrong aggpk length (should be 32)");
+        }
+        if (msg.length > 127) {
+            throw new IllegalArgumentException("Wrong msg length (should max 127)");
+        }
+        if (extra.length > 127) {
+            throw new IllegalArgumentException("Wrong extra length (should max 127)");
+        }
+        if (aggpk.length + msg.length + extra.length > 250) {
+            throw new IllegalArgumentException("Wrong inputs total length (should max 250)");
+        }
+
+        // OP_INIT: recover pubnonce
+
+        // data: [aggpk_size(1b) | aggpk | msg_size (1b) | msg | extra_size(1b) | extra_bytes]
+        int data_size = 3+aggpk.length+msg.length+extra.length;
+        byte[] data = new byte[data_size];
+        int offset = 0;
+        data[offset++] = (byte) aggpk.length;
+        System.arraycopy(aggpk, 0, data, offset, aggpk.length);
+        offset+=aggpk.length;
+        data[offset++] = (byte) msg.length;
+        System.arraycopy(msg, 0, data, offset, msg.length);
+        offset+=msg.length;
+        data[offset++] = (byte) aggpk.length;
+        System.arraycopy(extra, 0, data, offset, extra.length);
+        offset+=extra.length;
+
+        int p1 = keynbr;
+        int p2 = 0x01; // OP_INIT
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_MUSIG2_GENERATE_NONCE, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_INIT):" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_INIT):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse response
+        byte[] pubnonce_bytes = rapdu.getData();
+
+        // OP_FINALIZE: recover encrypted_secnonce
+        p2 = 0x03; // OP_FINALIZE
+        plainApdu = new APDUCommand(0xB0, INS_MUSIG2_GENERATE_NONCE, p1, p2, new byte[0]);
+        logger.info("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_FINALIZE):" + plainApdu.toHexString());
+        rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_FINALIZE):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse response
+        byte[] encrypted_secnonce_bytes = rapdu.getData();
+
+        // return pubnonce, secnonce
+        return new byte[][] {pubnonce_bytes, encrypted_secnonce_bytes};
+    }
+
+    /**
+     * This function generate a MuSig2 signature for the specified private key stored in the Satochip.
+     * The specified private key comes either from a keyslot or derived from a BIP32 seed using cardGetBIP32ExtendedKey().
+     * The signature is computed based on secnonce and intermediate values b, ea, R_evenness and ggac.
+     * Signature is based on the BIP-0327 specification: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki.
+     *
+     * The function returns the partial psig signature for corresponding key and given secnonce & session context.
+     *
+     * <p>Card exception codes:</p>
+     * <ul>
+     *    <li>9C06 SW_UNAUTHORIZED</li>
+     *    <li>9C4A SW_FEATURE_DISABLED</li>
+     *    <li>6700  SW_WRONG_LENGTH</li>
+     *    <li>9C44 SW_BIP327_WRONG_SECNONCE</li>
+     *    <li>9C47 SW_BIP327_INVALID_ID</li>
+     *    <li>9C10 SW_INCORRECT_P1</li>
+     *    <li>9C14 SW_BIP32_UNINITIALIZED_SEED</li>
+     *    <li>9C09 SW_INCORRECT_ALG</li>
+     *    <li>9C45 SW_BIP327_PUBKEY_MISMATCH</li>
+     * </ul>
+     *
+     * @param keynbr the key to use (0xFF for bip32 extended key)
+     * @param secnonce the encrypted secnonce previously computed with cardMusig2GenerateNonce()
+     * @param ea the result of e multiplied by a in BIP327, where e=int(hashBIP0340/challenge(xbytes(R) || xbytes(Q) || m)) mod n and a=GetSessionKeyAggCoeff(session_ctx, P)
+     * @param b from BIP327 Session Context where b=int(hashMuSig/noncecoef(aggnonce || xbytes(Q) || m)) mod n
+     * @param r_has_even_y is True is has_even_y(R) for R as defined in BIP327, else False
+     * @param ggacc_is_1 is True if ggacc is equal to 1, else False where ggacc=g*gacc
+     * @return psig, the partial signature as 32-byte array
+     * @throws IllegalArgumentException
+     * @throws APDUException if command APDU fails
+     * @see #cardMusig2GenerateNonce(int, byte[], byte[], byte[])
+     *
+     * data (init): [encrypted secnonce(112b) | iv(16b) | mac(16b)]
+     * data (finalize): [b(32b) | e*a(32b) | has_even_y(R) (1b) | g*gacc (1b)]
+     */
+    private byte[] cardMusig2Sign(int keynbr, byte[] secnonce, byte[] b, byte[] ea, Boolean r_has_even_y, Boolean ggacc_is_1) throws APDUException {
+
+        // check inputs
+        if (secnonce.length != 144) {
+            throw new IllegalArgumentException("Wrong secnonce length (should be 144)");
+        }
+        if (b.length != 32) {
+            throw new IllegalArgumentException("Wrong b length (should be 32)");
+        }
+        if (ea.length != 32) {
+            throw new IllegalArgumentException("Wrong ea length (should be 32)");
+        }
+
+        // OP_INIT: import secnonce
+        // data: [encrypted secnonce(112b) | iv(16b) | mac(16b)]
+        byte[] data = secnonce;
+        int ins = INS_MUSIG2_SIGN_HASH;
+        int p1 = keynbr;
+        int p2 = 0x01; // OP_INIT
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, ins, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_INIT):" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_INIT):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // OP_FINALIZE: recover encrypted_secnonce
+
+        // data: [ b(32b)| ea(32b) | R_evenness(1b) | ggacc(1b) ]
+        data = new byte[66];
+        int offset = 0;
+        System.arraycopy(b, 0, data, offset, b.length);
+        offset+=b.length;
+        System.arraycopy(ea, 0, data, offset, ea.length);
+        offset+=ea.length;
+        data[offset++] = r_has_even_y? (byte)0x00 : (byte)0x01;
+        data[offset++] = ggacc_is_1? (byte)0x01 : (byte)0x00;
+
+        p2 = 0x03; // OP_FINALIZE
+        plainApdu = new APDUCommand(0xB0, ins, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_FINALIZE):" + plainApdu.toHexString());
+        rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_FINALIZE):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse response
+        byte[] psig = rapdu.getData();
+
+        // return partial sig
+        return psig;
+    }
 
     /****************************************
      *               2FA commands            *

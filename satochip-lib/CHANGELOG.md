@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2]:
+
+Add Schnorr signature & Musig2 signature support for Satochip:
+* byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag)
+* byte[] cardSignSchnorrHash(byte[] txhash, byte[] chalresponse)
+* byte[][] cardMusig2GenerateNonce(int keynbr, byte[] aggpk, byte[] msg, byte[] extra)
+* byte[] cardMusig2Sign(int keynbr, byte[] secnonce, byte[] b, byte[] ea, Boolean r_has_even_y, Boolean ggacc_is_1)
+
 ## [0.3.1]:
 
 * Add Satocash support (wip)
