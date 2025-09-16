@@ -2,7 +2,7 @@ apply plugin: 'java'
 //apply plugin: 'maven'
 
 // semantic versioning
-version='0.2.4'
+version='0.2.5'
 
 dependencies {
     implementation 'org.bouncycastle:bcprov-jdk15on:1.60'

@@ -25,6 +25,8 @@ public class SatodimeStatus {
     private byte[] satodime_keys_state= null;
     private byte[] unlock_counter= null;
     private byte[] unlock_secret= null;
+    private boolean fixedCvc = false;
+    private boolean isCoa = false;
     
     public SatodimeStatus() {
         unlock_counter= new byte[SIZE_UNLOCK_COUNTER];
@@ -60,6 +62,23 @@ public class SatodimeStatus {
             }
             satodime_keys_state = new byte[max_num_keys];
             System.arraycopy(data, offset, satodime_keys_state, 0, max_num_keys);
+            dataRemain-=max_num_keys;
+            offset+=max_num_keys;
+            // use fixed CVC code (for Satodime v0.2+)
+            if (dataRemain>=1){
+                byte cvcByte = data[offset++];
+                if (cvcByte==0x01){
+                    fixedCvc = true;
+                }
+            }
+            dataRemain--;
+            // use fixed CVC code (for Satodime v0.2+)
+            if (dataRemain>=1){
+                byte coaByte = data[offset++];
+                if (coaByte==0x01){
+                    isCoa = true;
+                }
+            }
         }
         else if (sw==0x9c04){
             setup_done= false;
@@ -147,7 +166,11 @@ public class SatodimeStatus {
   public byte[] getKeysState(){
     return satodime_keys_state;
   }
-  
+
+  public boolean isFixedCvc() { return fixedCvc; }
+
+  public boolean isCoa() { return isCoa; }
+
   // printer
   public String toString(){
     String status_info=   "setup_done: " + setup_done + "\n" +
@@ -208,5 +231,5 @@ public class SatodimeStatus {
         
         return response;
     }
-  
+
 }
