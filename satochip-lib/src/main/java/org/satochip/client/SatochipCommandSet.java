@@ -1794,7 +1794,7 @@ public class SatochipCommandSet {
         data[offset++] = (byte) msg.length;
         System.arraycopy(msg, 0, data, offset, msg.length);
         offset+=msg.length;
-        data[offset++] = (byte) aggpk.length;
+        data[offset++] = (byte) extra.length;
         System.arraycopy(extra, 0, data, offset, extra.length);
         offset+=extra.length;
 
