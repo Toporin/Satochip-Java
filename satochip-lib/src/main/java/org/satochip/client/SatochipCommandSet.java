@@ -1644,7 +1644,7 @@ public class SatochipCommandSet {
      * @see #cardBip32GetExtendedKey(String, Byte, Integer)
      *
      */
-    private byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag) throws Exception {
+    public byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag) throws Exception {
 
         if (tweak.length != 32) {
             throw new IllegalArgumentException("Wrong tweak length (should be 32)");
@@ -1766,7 +1766,7 @@ public class SatochipCommandSet {
      * @see #cardBip32GetExtendedKey(String, Byte, Integer)
      *
      */
-    private byte[][] cardMusig2GenerateNonce(int keynbr, byte[] aggpk, byte[] msg, byte[] extra) throws APDUException {
+    public byte[][] cardMusig2GenerateNonce(int keynbr, byte[] aggpk, byte[] msg, byte[] extra) throws APDUException {
 
         // check inputs
         if (aggpk.length != 32) {
@@ -1862,7 +1862,7 @@ public class SatochipCommandSet {
      * data (init): [encrypted secnonce(112b) | iv(16b) | mac(16b)]
      * data (finalize): [b(32b) | e*a(32b) | has_even_y(R) (1b) | g*gacc (1b)]
      */
-    private byte[] cardMusig2Sign(int keynbr, byte[] secnonce, byte[] b, byte[] ea, Boolean r_has_even_y, Boolean ggacc_is_1) throws APDUException {
+    public byte[] cardMusig2Sign(int keynbr, byte[] secnonce, byte[] b, byte[] ea, Boolean r_has_even_y, Boolean ggacc_is_1) throws APDUException {
 
         // check inputs
         if (secnonce.length != 144) {
