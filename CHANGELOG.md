@@ -15,12 +15,21 @@ Java 17 support. The build now runs on JDK 17 (Gradle 4.10.2 -> 8.10, Android Gr
 unaffected. One behavioural fix was required, listed first because it affects card verification at
 runtime.
 
-* Fix `cardVerifyAuthenticity()` on JDK 16 and later. The `SunEC` provider dropped secp256k1 in
-  JDK 16, and the bundled sub-CA certificates are secp256k1, so PKIX validation of the device
-  certificate failed. `PKIXParameters.setSigProvider("BC")` now pins certificate-path signature
-  verification to BouncyCastle, which still supports the curve. No other crypto path was affected:
-  every other call site is either pinned to `"BC"` explicitly or uses BouncyCastle's lightweight
-  API, which never consults the JCE provider list.
+* Fix `cardVerifyAuthenticity()`, which was broken on every current JDK. The bundled sub-CA
+  certificates use secp256k1, and the old `CertPathValidator` (PKIX) path failed two different
+  ways: on JDK 8 and 11 the JVM-wide `jdk.certpath.disabledAlgorithms` property lists that curve
+  (via `include jdk.disabled.namedCurves`) and rejected the chain before any provider was
+  consulted, while on JDK 16+ the property ships empty but `SunEC` had dropped the curve outright.
+  The chain is now verified by checking its two links directly with `Certificate.verify(key, "BC")`,
+  which is not subject to the certpath policy and goes straight to BouncyCastle. Verified on JDK 8,
+  11, 17 and 21, all of which now validate with no JVM configuration; wrong-key chains are still
+  rejected. `CertPathValidator`, `PKIXParameters` and the in-memory `KeyStore` trust anchor are
+  gone, along with the `setSigProvider` workaround.
+  This narrows the check deliberately: only the signatures are verified, so certificate validity
+  periods and issuer name chaining are no longer enforced. The root CA and sub-CA are pinned
+  resources loaded from the jar rather than trust-store lookups, so the verifying keys are fixed by
+  construction and name chaining prevented nothing; the practical change is that an expired device
+  certificate now passes. The challenge-response step that follows is unchanged.
 * Pin the compiled bytecode level. `satochip-lib` and `satochip-desktop` previously set no
   `targetCompatibility` at all, so the published class-file version silently followed whichever JDK
   built them. Both now compile with `options.release = 11` regardless of the build JDK, and the
@@ -39,27 +48,6 @@ runtime.
   no released coordinates change.
 * `satochip-android`: `compileSdk` 28 -> 34, and the manifest `package` attribute is replaced by
   the `namespace` DSL, both required by AGP 8. `minSdk` stays at 19.
-
-Known limitation on JDK 8 and JDK 11 runtimes, not introduced by this release: current builds of
-both reject the certificate chain outright with `Algorithm constraints check failed on disabled
-algorithm: secp256k1`. A JDK security update added secp256k1 to the `jdk.disabled.namedCurves`
-property, which `jdk.certpath.disabledAlgorithms` pulls in via `include`, and that change was
-backported to the 8u and 11.0.x update streams. The rejection happens in the PKIX algorithm-
-constraints checker before any provider is selected, so `setSigProvider("BC")` cannot help.
-`cardVerifyAuthenticity()` therefore worked on older 8 and 11 builds and stopped working when that
-policy arrived. Verified here on 8u504 and 11.0.32 (both fail) against 17 and 21 (both ship the
-property commented out, and both validate once the fix above is applied).
-
-On JDK 17 or 21 no workaround is needed. On 8 or 11 the curve has to be re-enabled at the JVM level,
-for example:
-
-```
-java -Djava.security.properties=enable-secp256k1.props ...
-```
-
-where that file contains `jdk.disabled.namedCurves=` (empty). Both this and dropping the
-`include jdk.disabled.namedCurves` line from `jdk.certpath.disabledAlgorithms` were confirmed to
-restore validation on 11.0.32.
 
 ## [0.3.3]:
 
