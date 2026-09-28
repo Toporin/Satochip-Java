@@ -46,7 +46,9 @@ public class ApplicationStatus {
             protocol_minor_version= data[1];
             applet_major_version= data[2];
             applet_minor_version= data[3];
-            protocol_version= (protocol_major_version<<8) + protocol_minor_version;
+            // Mask the bytes: a minor version of 0x80 or above would otherwise sign-extend
+            // to a negative int and make version comparisons wrong.
+            protocol_version= ((protocol_major_version & 0xff)<<8) + (protocol_minor_version & 0xff);
       
             if (data.length >=8){
                 PIN0_remaining_tries= data[4];
@@ -127,6 +129,12 @@ public class ApplicationStatus {
         return version_string;
     }
 
+    /**
+     * Returns the applet protocol version as {@code (major << 8) | minor}, so protocol 0.16 is
+     * reported as 0x0010. Use it to gate behaviour that changed with a protocol revision.
+     *
+     * @return the protocol version, or 0 if the status could not be parsed
+     */
     public int getProtocolVersion() {
         return protocol_version;
     }

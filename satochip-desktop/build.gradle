@@ -1,9 +1,6 @@
 apply plugin: 'java'
-apply plugin: 'maven'
-apply plugin:'application'
-
-// semantic versioning
-version='0.0.1'
+apply plugin: 'maven-publish'
+apply plugin: 'application'
 
 dependencies {
     compile project(':satochip-lib')
@@ -23,6 +20,16 @@ task javadocJar(type: Jar, dependsOn: javadoc) {
 artifacts {
     archives sourcesJar
     archives javadocJar
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'satochip-desktop'
+            from components.java
+            artifact sourcesJar
+        }
+    }
 }
 
 mainClassName = "org.satochip.desktop.Main"

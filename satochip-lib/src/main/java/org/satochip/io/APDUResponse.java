@@ -6,6 +6,8 @@ import java.io.*;
  * ISO7816-4 APDU response.
  */
 public class APDUResponse {
+  public static final String HEXES = "0123456789ABCDEF";
+
   public static final int SW_OK = 0x9000;
   public static final int SW_SECURITY_CONDITION_NOT_SATISFIED = 0x6982;
   public static final int SW_AUTHENTICATION_METHOD_BLOCKED = 0x6983;
@@ -16,7 +18,7 @@ public class APDUResponse {
   public static final int SW_WRONG_PIN_LEGACY = 0x9C02;
   public static final int SW_BLOCKED_PIN = 0x9C0C;
   public static final int SW_FACTORY_RESET = 0xFF00;
-  public static final String HEXES = "0123456789ABCDEF";
+
   
   private byte[] apdu;
   private byte[] data;
