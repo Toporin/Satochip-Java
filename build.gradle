@@ -4,7 +4,7 @@ buildscript {
     
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:3.2.1'
@@ -15,7 +15,7 @@ buildscript {
 allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
@@ -25,4 +25,13 @@ task clean(type: Delete) {
 
 subprojects {
     tasks.withType(Javadoc).all { enabled = false }
+}
+
+// Coordinates for JitPack. For a multi-module Gradle build JitPack expects
+// com.github.<user>.<repo>:<module>:<tag>, and passes the tag as -Pversion.
+allprojects {
+    group = 'com.github.Toporin.Satochip-Java'
+    if (project.version == 'unspecified' || project.version == null) {
+        project.version = '0.3.1-SNAPSHOT'
+    }
 }
