@@ -17,12 +17,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
-import java.security.cert.CertPathValidator;
-import java.security.cert.CertPath;
 import java.security.cert.CertificateFactory;
-import java.security.cert.Certificate;
-import java.security.cert.PKIXParameters;
-import java.security.KeyStore;
+import java.security.cert.X509Certificate;
 import java.security.PublicKey;
 
 import static org.satochip.client.Constants.*;
@@ -3844,6 +3840,14 @@ public class SatochipCommandSet {
      * <p>The method uses embedded certificate authority certificates to validate the full
      * certificate chain, ensuring the card was properly personalized by an authorized entity.</p>
      *
+     * <p>The chain is checked by verifying the signature on each of its two links directly with
+     * BouncyCastle, rather than through {@code CertPathValidator}: the certificates use the
+     * secp256k1 curve, which the JVM-wide {@code jdk.certpath.disabledAlgorithms} policy rejects on
+     * some JDK releases regardless of the configured provider. Only the signatures are verified -
+     * certificate validity periods and issuer name chaining are not enforced - so an expired device
+     * certificate is accepted. The root CA and sub-CA are pinned resources shipped with this
+     * library, so the keys used for verification are fixed and not resolved from a trust store.</p>
+     *
      * <p><strong>Compatibility:</strong></p>
      * <ul>
      *   <li>Satochip version v0.12-0.5 and higher</li>
@@ -3886,7 +3890,6 @@ public class SatochipCommandSet {
         }
 
         // verify certificate chain
-        boolean isValidated= false;
         PublicKey pubkeyDevice= null;
         try{
             // load certs
@@ -3902,13 +3905,13 @@ public class SatochipCommandSet {
             InputStream isDevice = new ByteArrayInputStream(cert_pem.getBytes(StandardCharsets.UTF_8));
             // gen certs
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC"); // without BC provider, validation fails...
-            Certificate certCa = certificateFactory.generateCertificate(isCa);
+            X509Certificate certCa = (X509Certificate) certificateFactory.generateCertificate(isCa);
             txt_ca= certCa.toString();
             logger.warning("SATOCHIPLIB: certCa: " + txt_ca);
-            Certificate certSubca = certificateFactory.generateCertificate(isSubca);
+            X509Certificate certSubca = (X509Certificate) certificateFactory.generateCertificate(isSubca);
             txt_subca= certSubca.toString();
             logger.warning("SATOCHIPLIB: certSubca: " + txt_subca);
-            Certificate certDevice = certificateFactory.generateCertificate(isDevice);
+            X509Certificate certDevice = (X509Certificate) certificateFactory.generateCertificate(isDevice);
             logger.warning("SATOCHIPLIB: certDevice: " + certDevice);
             txt_device= certDevice.toString();
             logger.warning("SATOCHIPLIB: txtCertDevice: " + txt_device);
@@ -3916,31 +3919,29 @@ public class SatochipCommandSet {
             pubkeyDevice= certDevice.getPublicKey();
             logger.warning("SATOCHIPLIB: certDevice pubkey: " + pubkeyDevice.toString());
 
-            // cert chain
-            Certificate[] chain= new Certificate[2];
-            chain[0]= certDevice;
-            chain[1]= certSubca;
-            CertPath certPath = certificateFactory.generateCertPath(Arrays.asList(chain));
-
-            // keystore
-            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-            ks.load(null, null);
-            KeyStore.TrustedCertificateEntry tcEntry= new KeyStore.TrustedCertificateEntry(certCa);
-            //KeyStore.TrustedCertificateEntry tcEntry= new KeyStore.TrustedCertificateEntry(certSubca);
-            ks.setEntry("SatodimeCA", tcEntry, null);
-
-            // validator
-            PKIXParameters params = new PKIXParameters(ks);
-            params.setRevocationEnabled(false);
-            CertPathValidator certValidator = CertPathValidator.getInstance(CertPathValidator.getDefaultType()); // PKIX
-            certValidator.validate(certPath, params);
-            isValidated=true;
+            // Verify the two chain links directly against BouncyCastle, rather than through
+            // CertPathValidator. PKIX applies the JVM-wide jdk.certpath.disabledAlgorithms
+            // security property, which lists secp256k1 on current JDK 8 and 11 builds and so
+            // rejects this chain before any provider is consulted; Certificate.verify() is not
+            // subject to that policy. The root CA and sub-CA are pinned resources loaded above,
+            // so the verifying keys are fixed by construction.
+            // Note this checks the signatures only: certificate validity periods and issuer
+            // name chaining are deliberately not enforced.
+            try {
+                certSubca.verify(certCa.getPublicKey(), "BC");
+            } catch (Exception e) {
+                throw new RuntimeException("sub-CA certificate is not signed by the root CA", e);
+            }
+            try {
+                certDevice.verify(certSubca.getPublicKey(), "BC");
+            } catch (Exception e) {
+                throw new RuntimeException("device certificate is not signed by the sub-CA", e);
+            }
             logger.info("SATOCHIPLIB: Certificate chain validated!");
 
         }catch (Exception e){
             logger.warning("SATOCHIPLIB: Exception in cardVerifyAuthenticity:"+ e);
             e.printStackTrace();
-            isValidated=false;
             txt_error= "Failed to validate certificate chain! \r\n\r\n" + e.toString();
             String[] out = new String [] {FAIL, txt_ca, txt_subca, txt_device, txt_error};
             return out;

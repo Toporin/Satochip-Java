@@ -16,11 +16,13 @@ as classes specifically addressing the Satochip.
 
 ### Requirements
 
-* **JDK 8 or 11.** The build uses Gradle 4.10.2, which does not run on JDK 17 or later.
-  Use `sudo update-alternatives --config java` to switch, or set `JAVA_HOME` for one invocation:
+* **JDK 17.** The build uses Gradle 8.10 and, for `satochip-android`, Android Gradle Plugin 8.5.2;
+  both require JDK 17. If JDK 17 is not your default, set `JAVA_HOME` for one invocation:
   ```
-  JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 ./gradlew ...
+  JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ./gradlew ...
   ```
+  The **published jars target Java 11** (`options.release = 11`) regardless of the JDK used to build
+  them, so consumers only need Java 11 or later.
 * Building `satochip-android` additionally needs the Android SDK, with its location in
   `local.properties` (`sdk.dir=/path/to/Android/Sdk`). The two JVM modules build without it.
 
@@ -62,7 +64,7 @@ Place the jar in a folder (e.g. `libs`) and add to the *dependencies* section of
 *build.gradle*:
 
 ```groovy
-api files('libs/satochip-lib-0.2.6.jar')
+api files('libs/satochip-lib-0.3.4.jar')
 ```
 
 To install into your local Maven repository instead:
@@ -80,6 +82,10 @@ the first `cardSelect()`/`cardGetStatus()`. The current case is `cardUnblockPin(
 applet v0.16 introduced a length-prefixed payload and the ability to set a new PIN while
 unblocking, while earlier Satochip versions, SeedKeeper and Satodime keep the legacy bare-PUK
 payload.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License and attribution
 

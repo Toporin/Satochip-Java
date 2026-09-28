@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+This file covers the whole repository. Entries before 0.3.4 describe `satochip-lib` only, which is
+where this changelog previously lived.
+
+## [0.3.4]:
+
+Java 17 support. The build now runs on JDK 17 (Gradle 4.10.2 -> 8.10, Android Gradle Plugin
+3.2.1 -> 8.5.2), while the published bytecode stays at Java 11, so existing consumers are
+unaffected. One behavioural fix was required, listed first because it affects card verification at
+runtime.
+
+* Fix `cardVerifyAuthenticity()`, which was broken on every current JDK. The bundled sub-CA
+  certificates use secp256k1, and the old `CertPathValidator` (PKIX) path failed two different
+  ways: on JDK 8 and 11 the JVM-wide `jdk.certpath.disabledAlgorithms` property lists that curve
+  (via `include jdk.disabled.namedCurves`) and rejected the chain before any provider was
+  consulted, while on JDK 16+ the property ships empty but `SunEC` had dropped the curve outright.
+  The chain is now verified by checking its two links directly with `Certificate.verify(key, "BC")`,
+  which is not subject to the certpath policy and goes straight to BouncyCastle. Verified on JDK 8,
+  11, 17 and 21, all of which now validate with no JVM configuration; wrong-key chains are still
+  rejected. `CertPathValidator`, `PKIXParameters` and the in-memory `KeyStore` trust anchor are
+  gone, along with the `setSigProvider` workaround.
+  This narrows the check deliberately: only the signatures are verified, so certificate validity
+  periods and issuer name chaining are no longer enforced. The root CA and sub-CA are pinned
+  resources loaded from the jar rather than trust-store lookups, so the verifying keys are fixed by
+  construction and name chaining prevented nothing; the practical change is that an expired device
+  certificate now passes. The challenge-response step that follows is unchanged.
+* Pin the compiled bytecode level. `satochip-lib` and `satochip-desktop` previously set no
+  `targetCompatibility` at all, so the published class-file version silently followed whichever JDK
+  built them. Both now compile with `options.release = 11` regardless of the build JDK, and the
+  build itself requires JDK 17.
+* Expose BouncyCastle as an `api` dependency. `SatochipParser.Recover()` returns
+  `org.bouncycastle.math.ec.ECPoint`, but BouncyCastle was an `implementation` dependency and so
+  landed in `runtime` scope in the published POM, meaning external callers of `Recover()` could not
+  compile against it without declaring BouncyCastle themselves.
+* Upgrade BouncyCastle to `bcprov-jdk18on:1.78`, replacing the 2018-era `bcprov-jdk15on:1.60`, and
+  exclude the `bcprov-jdk15to18:1.69` copy that arrived transitively through bitcoinj. The two
+  artifact IDs cannot be deduplicated by Gradle, so both sets of `org.bouncycastle` packages were
+  previously on the classpath at once.
+* Unify the version and group across all three modules. `satochip-android` previously pinned its
+  own `version='0.0.2'` and `group='org.satochip'`, so it now tracks the repository version and
+  sits under `com.github.Toporin.Satochip-Java` with its siblings. The module is not published, so
+  no released coordinates change.
+* `satochip-android`: `compileSdk` 28 -> 34, and the manifest `package` attribute is replaced by
+  the `namespace` DSL, both required by AGP 8. `minSdk` stays at 19.
+
 ## [0.3.3]:
 
 Merges the Schnorr/MuSig2 and Satocash support from 0.3.1-0.3.2 with the PIN and

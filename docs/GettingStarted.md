@@ -28,8 +28,10 @@ Add the library to your Android project:
 
 ```gradle
 dependencies {
-    implementation files('libs/satochip-lib-0.2.3.jar')
-    implementation files('libs/satochip-android-0.0.2.jar')
+    implementation files('libs/satochip-lib-0.3.4.jar')
+    // satochip-android builds as an Android library; the Gradle build produces
+    // satochip-android/build/outputs/aar/satochip-android-release.aar
+    implementation files('libs/satochip-android-release.aar')
 }
 ```
 
