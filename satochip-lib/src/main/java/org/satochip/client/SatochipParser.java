@@ -710,6 +710,9 @@ public class SatochipParser{
         ECPoint point=null;
         for (int recid=0; recid<4; recid++){
             point= Recover(hash, sigBig, recid, false);
+            if (point==null){ // this recovery id yields no point on the curve
+                continue;
+            }
 
             // convert to byte[]
             byte[] pubkey= point.getEncoded(false); // uncompressed
@@ -780,6 +783,9 @@ public class SatochipParser{
         ECPoint point=null;
         for (int recid=0; recid<4; recid++){
             point= Recover(hash, sigBig, recid, false);
+            if (point==null){ // this recovery id yields no point on the curve
+                continue;
+            }
 
             // convert to byte[]
             byte[] pubkey= point.getEncoded(false); // uncompressed
@@ -888,50 +894,17 @@ public class SatochipParser{
      */
     public byte[] parseToCompactSignature(byte[] sigIn){
 
-        // sig is DER format, starting with 30 45
-        int sigInSize= sigIn.length;
-
+        // sig is DER format: 30 <len> 02 <lr> <r> 02 <ls> <s>
         int offset=0;
         if (sigIn[offset++] != 0x30){
             throw new RuntimeException("Wrong signature byte (should be 0x30) !");
         }
-        int lt= sigIn[offset++];
-        int check= sigIn[offset++];
-        if (check != 0x02){
-            throw new RuntimeException("Wrong signature check byte (should be 0x02) !");
-        }
+        offset++; // sequence length, not needed
 
-        int lr= sigIn[offset++]; // should be 0x20 or 0x21 if first r msb is 1
         byte[] r= new byte[32];
-        if (lr== 0x20){
-            System.arraycopy(sigIn, offset, r, 0, 32);
-            offset+=32;
-        }else if (lr== 0x21){
-            offset++; // skip zero byte
-            System.arraycopy(sigIn, offset, r, 0, 32);
-            offset+=32;
-        }
-        else{
-            throw new RuntimeException("Wrong signature r length (should be 0x20 or 0x21) !");
-        }
-
-        check= sigIn[offset++];
-        if (check != 0x02){
-            throw new RuntimeException("Wrong signature check byte (should be 0x02) !");
-        }
-
-        int ls= sigIn[offset++]; // should be 0x20 or 0x21 if first s msb is 1
+        offset= readDerInteger(sigIn, offset, r);
         byte[] s= new byte[32];
-        if (ls== 0x20){
-            System.arraycopy(sigIn, offset, s, 0, 32);
-            offset+=32;
-        } else if (ls== 0x21){
-            offset++; // skip zero byte
-            System.arraycopy(sigIn, offset, s, 0, 32);
-            offset+=32;
-        } else{
-            throw new RuntimeException("Wrong signature s length (should be 0x20 or 0x21) !");
-        }
+        offset= readDerInteger(sigIn, offset, s);
 
         int sigOutSize= 64;
         byte[] sigOut= new byte[sigOutSize];
@@ -939,6 +912,36 @@ public class SatochipParser{
         System.arraycopy(s, 0, sigOut, 32, s.length);
 
         return sigOut;
+    }
+
+    /**
+     * Reads one DER INTEGER and writes it right-aligned into a 32-byte big-endian buffer.
+     *
+     * <p>DER integers are signed and minimally encoded, so a 256-bit value may occupy 33 bytes
+     * (a leading 0x00 keeps it positive) or fewer than 32 (leading zero bytes are simply not
+     * emitted). The latter happens for roughly one signature component in 256, and used to be
+     * rejected outright.</p>
+     *
+     * @param sig the DER-encoded signature
+     * @param offset offset of the 0x02 tag
+     * @param out 32-byte buffer receiving the value, right-aligned and zero-padded
+     * @return the offset just past this integer
+     */
+    private static int readDerInteger(byte[] sig, int offset, byte[] out) {
+        if (sig[offset++] != 0x02){
+            throw new RuntimeException("Wrong signature check byte (should be 0x02) !");
+        }
+        int len= sig[offset++] & 0xff;
+        if (len > 0 && sig[offset] == 0x00){ // strip the sign byte, if present
+            offset++;
+            len--;
+        }
+        if (len > out.length){
+            throw new RuntimeException("Wrong signature integer length: " + len);
+        }
+        java.util.Arrays.fill(out, (byte) 0x00);
+        System.arraycopy(sig, offset, out, out.length - len, len); // right-align, zero-pad
+        return offset + len;
     }
 
     /**

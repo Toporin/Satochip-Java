@@ -72,7 +72,7 @@ public class SatodimeStatus {
                 }
             }
             dataRemain--;
-            // use fixed CVC code (for Satodime v0.2+)
+            // is it used as Certificate of Authenticity (for Satodime v0.2+)
             if (dataRemain>=1){
                 byte coaByte = data[offset++];
                 if (coaByte==0x01){
@@ -174,8 +174,8 @@ public class SatodimeStatus {
   // printer
   public String toString(){
     String status_info=   "setup_done: " + setup_done + "\n" +
-                                  "max_num_keys: " + max_num_keys + "\n" +
-                                  "satodime_keys_state: " + Arrays.toString(satodime_keys_state);
+                          "max_num_keys: " + max_num_keys + "\n" +
+                          "satodime_keys_state: " + Arrays.toString(satodime_keys_state);
     return status_info;
   }
   

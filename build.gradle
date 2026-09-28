@@ -31,7 +31,5 @@ subprojects {
 // com.github.<user>.<repo>:<module>:<tag>, and passes the tag as -Pversion.
 allprojects {
     group = 'com.github.Toporin.Satochip-Java'
-    if (project.version == 'unspecified' || project.version == null) {
-        project.version = '0.3.1-SNAPSHOT'
-    }
+    // version comes from gradle.properties, or from -Pversion=<tag> when JitPack builds a tag
 }

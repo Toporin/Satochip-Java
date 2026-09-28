@@ -183,6 +183,17 @@ public class SatochipCommandSet {
     }
 
     /**
+     * Returns the type of applet selected on this card: "satochip", "seedkeeper", "satodime",
+     * "unknown", or null if no SELECT has been performed yet.
+     *
+     * @return the applet type, or null before the first successful SELECT
+     * @see #cardSelect()
+     */
+    public String getCardType() {
+        return cardType;
+    }
+
+    /**
      * Returns the current Satodime status after refreshing it from the card.
      *
      * <p>This method automatically calls {@link #satodimeGetStatus()} to ensure
@@ -1135,14 +1146,23 @@ public class SatochipCommandSet {
     }
 
     /**
+     * Protocol version from which the Satochip applet expects a length-prefixed UNBLOCK PIN
+     * payload. Encoded the way {@link ApplicationStatus#getProtocolVersion()} reports it:
+     * {@code (major &lt;&lt; 8) | minor}, so 0x0010 is protocol 0.16.
+     */
+    private static final int PROTOCOL_VERSION_SIZE_PREFIXED_UNBLOCK = 0x0010; // v0.16
+
+    /**
      * Unblocks a blocked PIN using the corresponding PUK (PIN Unblock Key).
      *
      * <p>When a PIN becomes blocked due to too many incorrect attempts, this method
      * can be used to unblock it using the PUK. The PUK itself has limited retry
      * attempts, and if exhausted, may trigger a factory reset.</p>
      *
-     * <p>Successful unblocking typically resets the PIN retry counter, allowing
-     * normal PIN operations to resume.</p>
+     * <p>Successful unblocking resets the PIN retry counter, allowing normal PIN
+     * operations to resume. The PIN keeps its previous value; to replace a forgotten
+     * PIN at the same time, use {@link #cardUnblockPin(byte[], byte[])}, which requires
+     * a Satochip running applet v0.16 or later.</p>
      *
      * @param puk the PIN Unblock Key (PUK) to use for unblocking
      * @return the APDU response from the unblock command
@@ -1153,17 +1173,78 @@ public class SatochipCommandSet {
      * @throws Exception if the operation fails
      */
     public APDUResponse cardUnblockPin(byte[] puk) throws Exception {
+        return cardUnblockPin(puk, null);
+    }
+
+    /**
+     * Unblocks a blocked PIN using the PUK and, optionally, replaces the PIN.
+     *
+     * <p>The wire format depends on the applet: Satochip v0.16 introduced a
+     * length-prefixed payload {@code [PUK_size(1b) | PUK | (optional) PIN_size(1b) | PIN]},
+     * while earlier Satochip versions, SeedKeeper and Satodime expect the bare PUK with no
+     * prefix. The two are mutually incompatible, so the right one is selected from the applet
+     * type and the protocol version reported by GET STATUS (which is cached, see
+     * {@link #getApplicationStatus()}).</p>
+     *
+     * @param puk the PIN Unblock Key (PUK) to use for unblocking
+     * @param newPin the PIN to set once unblocked, or {@code null} to keep the previous PIN.
+     *               Only supported on Satochip applet v0.16 and later.
+     * @return the APDU response from the unblock command
+     * @throws IllegalArgumentException if the PUK is missing, or if a new PIN is requested on an
+     *                                  applet that does not support it
+     * @throws WrongPINException if the PUK is incorrect
+     * @throws WrongPINLegacyException if the PUK is incorrect (legacy format)
+     * @throws BlockedPINException if the PUK itself is blocked
+     * @throws ResetToFactoryException if the card triggers a factory reset
+     * @throws Exception if the operation fails
+     */
+    public APDUResponse cardUnblockPin(byte[] puk, byte[] newPin) throws Exception {
+        if (puk == null || puk.length == 0) {
+            throw new IllegalArgumentException("The PUK is required to unblock the PIN");
+        }
+        if (puk.length > 255) {
+            throw new IllegalArgumentException("PUK too long: " + puk.length);
+        }
+
+        boolean sizePrefixed = usesSizePrefixedUnblockFormat();
+        if (newPin != null && !sizePrefixed) {
+            throw new IllegalArgumentException(
+                    "Setting a new PIN while unblocking requires a Satochip running applet v0.16 "
+                            + "or later; this card only supports unblocking with the PUK alone");
+        }
+
+        byte[] data;
+        if (sizePrefixed) {
+            // v0.16: [PUK_size(1b) | PUK | (optional) PIN_size(1b) | PIN]
+            if (newPin != null && (newPin.length == 0 || newPin.length > 255)) {
+                throw new IllegalArgumentException("Invalid new PIN length: " + newPin.length);
+            }
+            int size = 1 + puk.length + (newPin == null ? 0 : 1 + newPin.length);
+            data = new byte[size];
+            int offset = 0;
+            data[offset++] = (byte) puk.length;
+            System.arraycopy(puk, 0, data, offset, puk.length);
+            offset += puk.length;
+            if (newPin != null) {
+                data[offset++] = (byte) newPin.length;
+                System.arraycopy(newPin, 0, data, offset, newPin.length);
+            }
+        } else {
+            // Legacy: the bare PUK, no length prefix.
+            data = puk;
+        }
+
         APDUCommand plainApdu = new APDUCommand(
                 0xB0,
                 INS_UNBLOCK_PIN,
                 0x00,
                 0x00,
-                puk
+                data
         );
 
         try{
-            //logger.info("SATOCHIPLIB: C-APDU cardUnblockPin:" + plainApdu.toHexString());
-            logger.info("SATOCHIPLIB: C-APDU cardUnblockPin");
+            logger.info("SATOCHIPLIB: C-APDU cardUnblockPin (format: "
+                    + (sizePrefixed ? "v0.16 size-prefixed" : "legacy") + ")");
             APDUResponse rapdu = this.cardTransmit(plainApdu);
             logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + rapdu.toHexString());
 
@@ -1190,6 +1271,26 @@ public class SatochipCommandSet {
             throw e;
         }
 
+    }
+
+    /**
+     * Whether this card expects the v0.16 length-prefixed UNBLOCK PIN payload.
+     *
+     * <p>Only the Satochip applet changed format. SeedKeeper and Satodime keep the legacy
+     * bare-PUK payload regardless of their own version numbering, so they are excluded by applet
+     * type rather than by version.</p>
+     *
+     * @return true for a Satochip running applet v0.16 or later
+     */
+    private boolean usesSizePrefixedUnblockFormat() throws IOException {
+        if (!"satochip".equals(cardType)) {
+            return false;
+        }
+        if (status == null) {
+            cardGetStatus(); // populates the cached status
+        }
+        return status != null
+                && status.getProtocolVersion() >= PROTOCOL_VERSION_SIZE_PREFIXED_UNBLOCK;
     }
 
     /****************************************
