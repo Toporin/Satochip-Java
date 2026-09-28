@@ -3932,6 +3932,10 @@ public class SatochipCommandSet {
             // validator
             PKIXParameters params = new PKIXParameters(ks);
             params.setRevocationEnabled(false);
+            // The SunEC provider dropped secp256k1 in JDK 16, and the bundled sub-CA certs are
+            // secp256k1, so certificate-path signature verification must be pinned to BouncyCastle.
+            // Without this, validation fails on JDK 16+ with "Curve not supported".
+            params.setSigProvider("BC");
             CertPathValidator certValidator = CertPathValidator.getInstance(CertPathValidator.getDefaultType()); // PKIX
             certValidator.validate(certPath, params);
             isValidated=true;

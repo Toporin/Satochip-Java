@@ -1,25 +1,24 @@
-apply plugin: 'java'
+apply plugin: 'java-library'
 apply plugin: 'maven-publish'
 apply plugin: 'application'
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+}
+
 dependencies {
-    compile project(':satochip-lib')
-    //compile 'org.hid4java:hid4java:0.5.0'
+    api project(':satochip-lib')
 }
 
-task sourcesJar(type: Jar, dependsOn: classes) {
-    classifier = 'sources'
-    from sourceSets.main.allSource
-}
-
-task javadocJar(type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
-    from javadoc.destinationDir
-}
-
-artifacts {
-    archives sourcesJar
-    archives javadocJar
+application {
+    mainClass = 'org.satochip.desktop.Main'
 }
 
 publishing {
@@ -27,9 +26,6 @@ publishing {
         maven(MavenPublication) {
             artifactId = 'satochip-desktop'
             from components.java
-            artifact sourcesJar
         }
     }
 }
-
-mainClassName = "org.satochip.desktop.Main"

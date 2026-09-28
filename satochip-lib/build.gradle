@@ -1,24 +1,32 @@
-apply plugin: 'java'
+apply plugin: 'java-library'
 apply plugin: 'maven-publish'
 
+java {
+    // Build on JDK 17 (or newer)...
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+}
+
+// ...but always emit Java 11 bytecode, so the published artifact does not depend on
+// which JDK happened to run the build. `release` also compiles against the Java 11
+// API signatures, so newer-JDK-only methods are rejected at compile time.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+}
+
 dependencies {
-    implementation 'org.bouncycastle:bcprov-jdk15on:1.60'
-    implementation 'org.bitcoinj:bitcoinj-core:0.16.2'
-}
-
-task sourcesJar(type: Jar, dependsOn: classes) {
-    classifier = 'sources'
-    from sourceSets.main.allSource
-}
-
-task javadocJar(type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
-    from javadoc.destinationDir
-}
-
-artifacts {
-    archives sourcesJar
-    archives javadocJar
+    // `api`, not `implementation`: SatochipParser.Recover() returns
+    // org.bouncycastle.math.ec.ECPoint, so BouncyCastle is part of this module's
+    // public API and callers need it on their compile classpath.
+    api 'org.bouncycastle:bcprov-jdk18on:1.78'
+    // bitcoinj brings its own BouncyCastle build (bcprov-jdk15to18) under a different
+    // artifactId, which Gradle cannot dedupe against ours; exclude it so only one
+    // copy of the org.bouncycastle packages is on the classpath.
+    implementation('org.bitcoinj:bitcoinj-core:0.16.2') {
+        exclude group: 'org.bouncycastle'
+    }
 }
 
 publishing {
@@ -26,7 +34,6 @@ publishing {
         maven(MavenPublication) {
             artifactId = 'satochip-lib'
             from components.java
-            artifact sourcesJar
         }
     }
 }

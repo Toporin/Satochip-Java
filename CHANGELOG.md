@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+This file covers the whole repository. Entries before 0.3.4 describe `satochip-lib` only, which is
+where this changelog previously lived.
+
+## [0.3.4]:
+
+Java 17 support. The build now runs on JDK 17 (Gradle 4.10.2 -> 8.10, Android Gradle Plugin
+3.2.1 -> 8.5.2), while the published bytecode stays at Java 11, so existing consumers are
+unaffected. One behavioural fix was required, listed first because it affects card verification at
+runtime.
+
+* Fix `cardVerifyAuthenticity()` on JDK 16 and later. The `SunEC` provider dropped secp256k1 in
+  JDK 16, and the bundled sub-CA certificates are secp256k1, so PKIX validation of the device
+  certificate failed. `PKIXParameters.setSigProvider("BC")` now pins certificate-path signature
+  verification to BouncyCastle, which still supports the curve. No other crypto path was affected:
+  every other call site is either pinned to `"BC"` explicitly or uses BouncyCastle's lightweight
+  API, which never consults the JCE provider list.
+* Pin the compiled bytecode level. `satochip-lib` and `satochip-desktop` previously set no
+  `targetCompatibility` at all, so the published class-file version silently followed whichever JDK
+  built them. Both now compile with `options.release = 11` regardless of the build JDK, and the
+  build itself requires JDK 17.
+* Expose BouncyCastle as an `api` dependency. `SatochipParser.Recover()` returns
+  `org.bouncycastle.math.ec.ECPoint`, but BouncyCastle was an `implementation` dependency and so
+  landed in `runtime` scope in the published POM, meaning external callers of `Recover()` could not
+  compile against it without declaring BouncyCastle themselves.
+* Upgrade BouncyCastle to `bcprov-jdk18on:1.78`, replacing the 2018-era `bcprov-jdk15on:1.60`, and
+  exclude the `bcprov-jdk15to18:1.69` copy that arrived transitively through bitcoinj. The two
+  artifact IDs cannot be deduplicated by Gradle, so both sets of `org.bouncycastle` packages were
+  previously on the classpath at once.
+* Unify the version and group across all three modules. `satochip-android` previously pinned its
+  own `version='0.0.2'` and `group='org.satochip'`, so it now tracks the repository version and
+  sits under `com.github.Toporin.Satochip-Java` with its siblings. The module is not published, so
+  no released coordinates change.
+* `satochip-android`: `compileSdk` 28 -> 34, and the manifest `package` attribute is replaced by
+  the `namespace` DSL, both required by AGP 8. `minSdk` stays at 19.
+
+Known limitation on JDK 8 and JDK 11 runtimes, not introduced by this release: current builds of
+both reject the certificate chain outright with `Algorithm constraints check failed on disabled
+algorithm: secp256k1`. A JDK security update added secp256k1 to the `jdk.disabled.namedCurves`
+property, which `jdk.certpath.disabledAlgorithms` pulls in via `include`, and that change was
+backported to the 8u and 11.0.x update streams. The rejection happens in the PKIX algorithm-
+constraints checker before any provider is selected, so `setSigProvider("BC")` cannot help.
+`cardVerifyAuthenticity()` therefore worked on older 8 and 11 builds and stopped working when that
+policy arrived. Verified here on 8u504 and 11.0.32 (both fail) against 17 and 21 (both ship the
+property commented out, and both validate once the fix above is applied).
+
+On JDK 17 or 21 no workaround is needed. On 8 or 11 the curve has to be re-enabled at the JVM level,
+for example:
+
+```
+java -Djava.security.properties=enable-secp256k1.props ...
+```
+
+where that file contains `jdk.disabled.namedCurves=` (empty). Both this and dropping the
+`include jdk.disabled.namedCurves` line from `jdk.certpath.disabledAlgorithms` were confirmed to
+restore validation on 11.0.32.
+
 ## [0.3.3]:
 
 Merges the Schnorr/MuSig2 and Satocash support from 0.3.1-0.3.2 with the PIN and

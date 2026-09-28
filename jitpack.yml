@@ -2,6 +2,6 @@
 # satochip-android is deliberately excluded: it needs the Android SDK, which JitPack
 # would have to provision, and consumers of the JVM library do not need it.
 jdk:
-  - openjdk11
+  - openjdk17
 install:
   - ./gradlew :satochip-lib:publishToMavenLocal :satochip-desktop:publishToMavenLocal
