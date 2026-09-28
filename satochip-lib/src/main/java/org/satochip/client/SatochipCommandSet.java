@@ -3,15 +3,14 @@ package org.satochip.client;
 import org.bitcoinj.core.Base58;
 import org.bitcoinj.core.Sha256Hash;
 import org.bouncycastle.crypto.digests.RIPEMD160Digest;
+import org.satochip.client.satocash.*;
 import org.satochip.client.seedkeeper.*;
 import org.satochip.io.*;
 import org.bouncycastle.util.encoders.Hex;
 
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.io.IOException;
@@ -98,10 +97,7 @@ public class SatochipCommandSet {
     public static final byte[] SATOCHIP_AID = Hex.decode("5361746f43686970"); //SatoChip
     public static final byte[] SEEDKEEPER_AID = Hex.decode("536565644b6565706572"); //SeedKeeper
     public static final byte[] SATODIME_AID = Hex.decode("5361746f44696d65"); //SatoDime
-
-    public final static byte DERIVE_P1_SOURCE_MASTER = (byte) 0x00;
-    public final static byte DERIVE_P1_SOURCE_PARENT = (byte) 0x40;
-    public final static byte DERIVE_P1_SOURCE_CURRENT = (byte) 0x80;
+    public static final byte[] SATOCASH_AID = Hex.decode("5361746f63617368"); //Satocash
 
     /**
      * Creates a new SatochipCommandSet instance with the specified APDU channel.
@@ -502,8 +498,11 @@ public class SatochipCommandSet {
             if (rapdu.getSw() != 0x9000) {
                 rapdu = cardSelect("satodime");
                 if (rapdu.getSw() != 0x9000) {
-                    this.cardType = "unknown";
-                    logger.warning("SATOCHIPLIB: CardSelect: could not select a known applet");
+                    rapdu = cardSelect("satocash");
+                    if (rapdu.getSw() != 0x9000) {
+                        this.cardType = "unknown";
+                        logger.warning("SATOCHIPLIB: CardSelect: could not select a known applet");
+                    }
                 }
             }
         }
@@ -519,6 +518,7 @@ public class SatochipCommandSet {
      *   <li>"satochip" - Satochip wallet applet</li>
      *   <li>"seedkeeper" - SeedKeeper secret storage applet</li>
      *   <li>"satodime" - Satodime bearer bond applet</li>
+     *   <li>"satocash" - Cashu wallet</li>
      * </ul>
      *
      * @param cardType the type of applet to select
@@ -533,8 +533,10 @@ public class SatochipCommandSet {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATOCHIP_AID);
         } else if (cardType.equals("seedkeeper")) {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SEEDKEEPER_AID);
-        } else {
+        } else if (cardType.equals("satodime")) {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATODIME_AID);
+        } else {
+            selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATOCASH_AID);
         }
 
         logger.info("SATOCHIPLIB: C-APDU cardSelect:" + selectApplet.toHexString());
@@ -1723,8 +1725,304 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
-    // TODO: add Schnorr signatures
-    // TODO: add MuSig2 signatures
+
+    /**
+     * This function generates a tweaked private keys, as used in Bitcoin taproot (TapTweak).
+     * See https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
+     * See also https://bitcoinops.org/img/posts/taproot-workshop/taproot-workshop.pdf
+     *
+     * A private key must first be available, either from a keyslot or
+     * derived from a BIP32 seed using cardBip32GetExtendedKey().
+     * The chip then stores the tweaked key in a dedicated keyslot and available next for schnorr signing.
+     * The function returns the public key corresponding to the private key.
+     *
+     * @param keynbr key number or 0xFF for the last derived Bip32 extended key
+     * @param tweak tweak data (32b)
+     * @param bypass_flag if set to True, the tweak is bypassed and the private key is used as is (for example for Nostr signatures)
+     * @return the tweaked public key as 65 bytes (uncompressed public)
+     * @throws IllegalArgumentException
+     * @throws APDUException if command APDU fails
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     *
+     */
+    public byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag) throws Exception {
+
+        // A null or empty tweak means tweak_size = 0: BIP86 key-path-only spending, where the
+        // output commits to no script tree. Satochip applet v0.16 requires that form, and a
+        // 32-byte all-zero tweak is NOT equivalent to it -- BIP341 hashes x(P) alone in the first
+        // case and x(P) || 32 zero bytes in the second, giving a different output key.
+        int tweakSize = (tweak == null) ? 0 : tweak.length;
+        if (tweakSize != 0 && tweakSize != 32) {
+            throw new IllegalArgumentException("Wrong tweak length (should be 0 or 32)");
+        }
+
+        //data: [tweak_size (1b) | tweak data (0 or 32b)]
+        byte[] data = new byte[1 + tweakSize];
+        int offset = 0;
+        data[offset++] = (byte) tweakSize;
+        if (tweakSize > 0) {
+            System.arraycopy(tweak, 0, data, offset, tweakSize);
+            offset += tweakSize;
+        }
+
+        int p1 = keynbr;
+        int p2 = bypass_flag? 0x01 : 0x00;
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_TAPROOT_TWEAK_PRIVKEY, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU TaprootTweakPrivateKey:" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU TaprootTweakPrivateKey:" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse & return response
+        byte[] rapdu_bytes = rapdu.getData();
+        int pubkey_size = 256*rapdu_bytes[0] + rapdu_bytes[1];
+        byte[] pubkey_bytes = new byte[pubkey_size];
+        System.arraycopy(rapdu_bytes, 2, pubkey_bytes, 0, pubkey_size);
+        return pubkey_bytes;
+    }
+
+    /**
+     * Signs a hash using Schnorr algorithm as specified in BIP340.
+     * See https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki.
+     *
+     * <p>This method creates a Schnorr signature for a hash using the last
+     * tweaked key. </p>
+     *
+     * <p>Card exception codes:</p>
+     * <ul>
+     *    <li>9C06 SW_UNAUTHORIZED</li>
+     *    <li>9C4A SW_FEATURE_DISABLED</li>
+     *    <li>6700 SW_WRONG_LENGTH</li>
+     *    <li>9C09 SW_INCORRECT_ALG</li>
+     *    <li>9C0B SW_SIGNATURE_INVALID</li>
+     * </ul>
+     *
+     * @param txhash the 32-byte hash to sign
+     * @param chalresponse optional 20-byte 2FA challenge response, or null
+     * @return the 64-byte signature
+     * @throws IllegalArgumentException if txhash is not 32 bytes or chalresponse is not 20 bytes or null
+     * @throws APDUException if command APDU fails
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     * @see #cardTaprootTweakPrivateKey(int, byte[], Boolean)
+     *
+     */
+    public byte[] cardSignSchnorrHash(byte[] txhash, byte[] chalresponse) throws Exception {
+
+        byte[] data;
+        if (txhash.length != 32) {
+            throw new IllegalArgumentException("Wrong txhash length (should be 32)");
+        }
+        if (chalresponse == null) {
+            data = new byte[32];
+            System.arraycopy(txhash, 0, data, 0, txhash.length);
+        } else if (chalresponse.length == 20) {
+            data = new byte[32 + 2 + 20];
+            int offset = 0;
+            System.arraycopy(txhash, 0, data, offset, txhash.length);
+            offset += 32;
+            data[offset++] = (byte) 0x80; // 2 middle bytes for 2FA flag
+            data[offset++] = (byte) 0x00;
+            System.arraycopy(chalresponse, 0, data, offset, chalresponse.length);
+        } else {
+            throw new IllegalArgumentException("Wrong challenge-response length (should be 20)");
+        }
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_SCHNORR_HASH, 0x00, 0x00, data);
+
+        logger.info("SATOCHIPLIB: C-APDU cardSignSchnorrHash:" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardSignSchnorrHash:" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse & return response
+        return rapdu.getData(); // return signature as 64 bytes
+    }
+
+    /**
+     *
+     * This function generate a MuSig2 nonce for the currently available private key stored in the Satochip.
+     * Generation is based on the BIP-0327 specification: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki.
+     *
+     * A private key must first be available, either from a keyslot or
+     * derived from a BIP32 seed using getBIP32ExtendedKey().
+     *
+     * The function returns the corresponding public nonce (pubnonce) and the encrypted secret nonce blob (secnonce).
+     * The encrypted secnonce is returned by the chip for later use during the signing phase.
+     *
+     * <p>Card exception codes:</p>
+     * <ul>
+     *    <li>9C06 SW_UNAUTHORIZED</li>
+     *    <li>9C4A SW_FEATURE_DISABLED</li>
+     *    <li>9C44 SW_BIP327_WRONG_SECNONCE</li>
+     *    <li>9C10 SW_INCORRECT_P1</li>
+     *    <li>9C14 SW_BIP32_UNINITIALIZED_SEED</li>
+     *    <li>9C09 SW_INCORRECT_ALG</li>
+     *    <li>6700  SW_WRONG_LENGTH</li>
+     *    <li>9C0F SW_INVALID_PARAMETER</li>
+     *    <li>9C46 SW_BIP327_COUNTER_OVERFLOW</li>
+     * </ul>
+     *
+     * @param keynbr the key to use (0xFF for bip32 extended key)
+     * @param aggpk the x-only aggregate public key
+     * @param msg the message (should be 127-bytes or less)
+     * @param extra auxiliary input (should be 127-bytes or less)
+     * @return array containing [pubnonce, encrypted_sec_nonce]
+     * @throws IllegalArgumentException
+     * @throws APDUException if command APDU fails
+     * @see #cardBip32GetExtendedKey(String, Byte, Integer)
+     *
+     */
+    public byte[][] cardMusig2GenerateNonce(int keynbr, byte[] aggpk, byte[] msg, byte[] extra) throws APDUException {
+
+        // check inputs
+        if (aggpk.length != 32) {
+            throw new IllegalArgumentException("Wrong aggpk length (should be 32)");
+        }
+        if (msg.length > 127) {
+            throw new IllegalArgumentException("Wrong msg length (should max 127)");
+        }
+        if (extra.length > 127) {
+            throw new IllegalArgumentException("Wrong extra length (should max 127)");
+        }
+        if (aggpk.length + msg.length + extra.length > 250) {
+            throw new IllegalArgumentException("Wrong inputs total length (should max 250)");
+        }
+
+        // OP_INIT: recover pubnonce
+
+        // data: [aggpk_size(1b) | aggpk | msg_size (1b) | msg | extra_size(1b) | extra_bytes]
+        int data_size = 3+aggpk.length+msg.length+extra.length;
+        byte[] data = new byte[data_size];
+        int offset = 0;
+        data[offset++] = (byte) aggpk.length;
+        System.arraycopy(aggpk, 0, data, offset, aggpk.length);
+        offset+=aggpk.length;
+        data[offset++] = (byte) msg.length;
+        System.arraycopy(msg, 0, data, offset, msg.length);
+        offset+=msg.length;
+        data[offset++] = (byte) aggpk.length;
+        System.arraycopy(extra, 0, data, offset, extra.length);
+        offset+=extra.length;
+
+        int p1 = keynbr;
+        int p2 = 0x01; // OP_INIT
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, INS_MUSIG2_GENERATE_NONCE, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_INIT):" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_INIT):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse response
+        byte[] pubnonce_bytes = rapdu.getData();
+
+        // OP_FINALIZE: recover encrypted_secnonce
+        p2 = 0x03; // OP_FINALIZE
+        plainApdu = new APDUCommand(0xB0, INS_MUSIG2_GENERATE_NONCE, p1, p2, new byte[0]);
+        logger.info("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_FINALIZE):" + plainApdu.toHexString());
+        rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_FINALIZE):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse response
+        byte[] encrypted_secnonce_bytes = rapdu.getData();
+
+        // return pubnonce, secnonce
+        return new byte[][] {pubnonce_bytes, encrypted_secnonce_bytes};
+    }
+
+    /**
+     * This function generate a MuSig2 signature for the specified private key stored in the Satochip.
+     * The specified private key comes either from a keyslot or derived from a BIP32 seed using cardGetBIP32ExtendedKey().
+     * The signature is computed based on secnonce and intermediate values b, ea, R_evenness and ggac.
+     * Signature is based on the BIP-0327 specification: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki.
+     *
+     * The function returns the partial psig signature for corresponding key and given secnonce & session context.
+     *
+     * <p>Card exception codes:</p>
+     * <ul>
+     *    <li>9C06 SW_UNAUTHORIZED</li>
+     *    <li>9C4A SW_FEATURE_DISABLED</li>
+     *    <li>6700  SW_WRONG_LENGTH</li>
+     *    <li>9C44 SW_BIP327_WRONG_SECNONCE</li>
+     *    <li>9C47 SW_BIP327_INVALID_ID</li>
+     *    <li>9C10 SW_INCORRECT_P1</li>
+     *    <li>9C14 SW_BIP32_UNINITIALIZED_SEED</li>
+     *    <li>9C09 SW_INCORRECT_ALG</li>
+     *    <li>9C45 SW_BIP327_PUBKEY_MISMATCH</li>
+     * </ul>
+     *
+     * @param keynbr the key to use (0xFF for bip32 extended key)
+     * @param secnonce the encrypted secnonce previously computed with cardMusig2GenerateNonce()
+     * @param ea the result of e multiplied by a in BIP327, where e=int(hashBIP0340/challenge(xbytes(R) || xbytes(Q) || m)) mod n and a=GetSessionKeyAggCoeff(session_ctx, P)
+     * @param b from BIP327 Session Context where b=int(hashMuSig/noncecoef(aggnonce || xbytes(Q) || m)) mod n
+     * @param r_has_even_y is True is has_even_y(R) for R as defined in BIP327, else False
+     * @param ggacc_is_1 is True if ggacc is equal to 1, else False where ggacc=g*gacc
+     * @return psig, the partial signature as 32-byte array
+     * @throws IllegalArgumentException
+     * @throws APDUException if command APDU fails
+     * @see #cardMusig2GenerateNonce(int, byte[], byte[], byte[])
+     *
+     * data (init): [encrypted secnonce(112b) | iv(16b) | mac(16b)]
+     * data (finalize): [b(32b) | e*a(32b) | has_even_y(R) (1b) | g*gacc (1b)]
+     */
+    public byte[] cardMusig2Sign(int keynbr, byte[] secnonce, byte[] b, byte[] ea, Boolean r_has_even_y, Boolean ggacc_is_1) throws APDUException {
+
+        // check inputs
+        if (secnonce.length != 144) {
+            throw new IllegalArgumentException("Wrong secnonce length (should be 144)");
+        }
+        if (b.length != 32) {
+            throw new IllegalArgumentException("Wrong b length (should be 32)");
+        }
+        if (ea.length != 32) {
+            throw new IllegalArgumentException("Wrong ea length (should be 32)");
+        }
+
+        // OP_INIT: import secnonce
+        // data: [encrypted secnonce(112b) | iv(16b) | mac(16b)]
+        byte[] data = secnonce;
+        int ins = INS_MUSIG2_SIGN_HASH;
+        int p1 = keynbr;
+        int p2 = 0x01; // OP_INIT
+
+        APDUCommand plainApdu = new APDUCommand(0xB0, ins, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_INIT):" + plainApdu.toHexString());
+        APDUResponse rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_INIT):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // OP_FINALIZE: recover encrypted_secnonce
+
+        // data: [ b(32b)| ea(32b) | R_evenness(1b) | ggacc(1b) ]
+        data = new byte[66];
+        int offset = 0;
+        System.arraycopy(b, 0, data, offset, b.length);
+        offset+=b.length;
+        System.arraycopy(ea, 0, data, offset, ea.length);
+        offset+=ea.length;
+        data[offset++] = r_has_even_y? (byte)0x00 : (byte)0x01;
+        data[offset++] = ggacc_is_1? (byte)0x01 : (byte)0x00;
+
+        p2 = 0x03; // OP_FINALIZE
+        plainApdu = new APDUCommand(0xB0, ins, p1, p2, data);
+        logger.info("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_FINALIZE):" + plainApdu.toHexString());
+        rapdu = this.cardTransmit(plainApdu);
+        logger.info("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_FINALIZE):" + rapdu.toHexString());
+        // check response for error
+        rapdu.checkOK();
+
+        // parse response
+        byte[] psig = rapdu.getData();
+
+        // return partial sig
+        return psig;
+    }
 
     /****************************************
      *               2FA commands            *
@@ -2984,6 +3282,369 @@ public class SatochipCommandSet {
 //        return result;
 
         return logs;
+    }
+
+
+    /****************************************
+     *             SATOCASH                 *
+     ****************************************/
+
+    /**
+     * Retrieves the current status of the Satocash applet.
+     *
+     * <p>This method queries the Satocash for its current state including:</p>
+     * <ul>
+     *   <li>Setup completion status</li>
+     *   <li>Seed initialization status</li>
+     *   <li>Protocol and applet version information</li>
+     *   <li>PIN retry counters</li>
+     *   <li>Number of mints, keysets, and proofs</li>
+     *   <li>Memory usage statistics</li>
+     * </ul>
+     *
+     * <p>The status is automatically cached in the internal satocashStatus object.</p>
+     *
+     * @param sendEncrypted whether to send the command over the secure channel (default: true)
+     * @throws Exception if communication fails or status retrieval fails
+     * @see SatocashStatus
+     */
+    public SatocashStatus satocashGetStatus(boolean sendEncrypted) throws Exception {
+        logger.info("SATOCHIPLIB: satocashGetStatus");
+
+        APDUCommand capdu = new APDUCommand((byte) 0xB0, Constants.satocashGetStatus, (byte) 0x00, (byte) 0x00, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        logger.info("SATOCHIPLIB: R-APDU satocashGetStatus: " + rapdu.toHexString());
+        rapdu.checkOK();
+
+        return new SatocashStatus(rapdu);
+    }
+
+    /**
+     * Imports a mint URL into the Satocash applet.
+     *
+     * <p>This method stores a mint URL on the card for use in Cashu token operations.
+     * The mint URL is used to identify which mint server to interact with for token
+     * minting and spending operations.</p>
+     *
+     * @param mintUrl the mint URL to import (UTF-8 encoded string)
+     * @return the assigned mint index
+     * @throws Exception if the import fails or URL is invalid
+     */
+    public byte satocashImportMint(String mintUrl) throws Exception {
+        logger.info("SATOCHIPLIB: satocashImportMint");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashImportMint;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        byte[] mintUrlBytes = mintUrl.getBytes(StandardCharsets.UTF_8);
+        byte[] data = new byte[1 + mintUrlBytes.length];
+        data[0] = (byte) mintUrlBytes.length;
+        System.arraycopy(mintUrlBytes, 0, data, 1, mintUrlBytes.length);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        return response[0];
+    }
+
+    /**
+     * Exports a mint URL from the Satocash applet.
+     *
+     * @param index the index of the mint to export
+     * @return the mint URL
+     * @throws Exception if the export fails or index is invalid
+     */
+    public String satocashExportMint(byte index) throws Exception {
+        logger.info("SATOCHIPLIB: satocashExportMint");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashExportMint;
+        byte p1 = index;
+        byte p2 = (byte) 0x00;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] data = rapdu.getData();
+        int urlSize = data[0] & 0xFF;
+        byte[] urlBytes = new byte[urlSize];
+        System.arraycopy(data, 1, urlBytes, 0, urlSize);
+
+        try {
+            return new String(urlBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // fallback to hex if UTF-8 decode fails
+            String urlHex = SatochipParser.toHexString(urlBytes);
+            return urlHex;
+        }
+    }
+
+    /**
+     * Removes a mint from the Satocash applet.
+     *
+     * @param index the index of the mint to remove
+     * @throws Exception if the removal fails
+     */
+    public void satocashRemoveMint(byte index) throws Exception {
+        logger.info("SATOCHIPLIB: satocashRemoveMint");
+
+        byte cla = (byte) 0xB0;
+        byte ins = (byte) Constants.satocashRemoveMint;
+        byte p1 = index;
+        byte p2 = (byte) 0x00;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+    }
+
+    /**
+     * Imports a keyset into the Satocash applet.
+     *
+     * @param keysetIdBytes the 8-byte keyset ID
+     * @param mintIndex the index of the associated mint
+     * @param unit the unit type for this keyset
+     * @return the assigned keyset index
+     * @throws Exception if the import fails
+     */
+    public byte satocashImportKeyset(byte[] keysetIdBytes, byte mintIndex, byte unit) throws Exception {
+        logger.info("SATOCHIPLIB: satocashImportKeyset");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashImportKeyset;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        byte[] data = new byte[keysetIdBytes.length + 2];
+        System.arraycopy(keysetIdBytes, 0, data, 0, keysetIdBytes.length);
+        data[keysetIdBytes.length] = mintIndex;
+        data[keysetIdBytes.length + 1] = unit;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        return response[0];
+    }
+
+    /**
+     * Exports keysets from the Satocash applet.
+     *
+     * @param indexes the array of keyset indexes to export
+     * @return a map of keyset index to SatocashKeyset
+     * @throws Exception if the export fails
+     */
+    public Map<Byte, SatocashKeyset> satocashExportKeysets(byte[] indexes) throws Exception {
+        logger.info("SATOCHIPLIB: satocashExportKeysets");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashExportKeyset;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        byte[] data = new byte[1 + indexes.length];
+        data[0] = (byte) indexes.length;
+        System.arraycopy(indexes, 0, data, 1, indexes.length);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        if (response.length != indexes.length * 11) {
+            throw new RuntimeException("Wrong export keysets size: " + response.length +
+                    ", expected: " + (indexes.length * 11));
+        }
+
+        Map<Byte, SatocashKeyset> keysetMap = new HashMap<>();
+        for (int i = 0; i < indexes.length; i++) {
+            int pos = 11 * i;
+            byte[] keysetBytes = new byte[11];
+            System.arraycopy(response, pos, keysetBytes, 0, 11);
+            SatocashKeyset keyset = new SatocashKeyset(keysetBytes);
+            keysetMap.put(keyset.getIndex(), keyset);
+        }
+
+        return keysetMap;
+    }
+
+    /**
+     * Removes a keyset from the Satocash applet.
+     *
+     * @param index the index of the keyset to remove
+     * @throws Exception if the removal fails
+     */
+    public void satocashRemoveKeyset(byte index) throws Exception {
+        logger.info("SATOCHIPLIB: satocashRemoveKeyset");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashRemoveKeyset;
+        byte p1 = index;
+        byte p2 = (byte) 0x00;
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+    }
+
+    /**
+     * Imports a proof into the Satocash applet.
+     *
+     * @param keysetIndex the index of the keyset to use
+     * @param amountExponent the amount exponent
+     * @param secretBytes the 32-byte secret
+     * @param unblindedKeyBytes the 33-byte unblinded key
+     * @return the assigned proof index (as 16-bit integer)
+     * @throws Exception if the import fails
+     */
+    public int satocashImportProof(byte keysetIndex, byte amountExponent,
+                                   byte[] secretBytes, byte[] unblindedKeyBytes) throws Exception {
+        logger.info("SATOCHIPLIB: satocashImportProof");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashImportProof;
+        byte p1 = (byte) 0x00;
+        byte p2 = (byte) 0x00;
+
+        // data: [keyset_index(1b) | amount_exponent(1b) | unblinded_key(33b) | secret(32b)]
+        byte[] data = new byte[2 + unblindedKeyBytes.length + secretBytes.length];
+        data[0] = keysetIndex;
+        data[1] = amountExponent;
+        System.arraycopy(unblindedKeyBytes, 0, data, 2, unblindedKeyBytes.length);
+        System.arraycopy(secretBytes, 0, data, 2 + unblindedKeyBytes.length, secretBytes.length);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse response
+        byte[] response = rapdu.getData();
+        return ((response[0] & 0xFF) << 8) + (response[1] & 0xFF);
+    }
+
+    /**
+     * Exports proofs from the Satocash applet.
+     *
+     * @param indexes the array of proof indexes to export
+     * @return a map of proof index to SatocashProof
+     * @throws Exception if the export fails
+     */
+    public Map<Integer, SatocashProof> satocashExportProofs(int[] indexes) throws Exception {
+        logger.info("SATOCHIPLIB: satocashExportProofs");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashExportProofs;
+        byte p1 = (byte) 0x00;
+
+        // OP_INIT
+        byte p2 = (byte) 0x01;
+
+        // data (OP_INIT): [ proof_index_list_size(1b) | proof_index(2b) ... | 2FA_size(1b) | 2FA ]
+        byte[] data = new byte[1 + indexes.length * 2 + 1]; // +1 for 2FA_size of 0
+        data[0] = (byte) indexes.length;
+        for (int i = 0; i < indexes.length; i++) {
+            data[1 + i * 2] = (byte) (indexes[i] >> 8);
+            data[1 + i * 2 + 1] = (byte) (indexes[i] & 0xFF);
+        }
+        data[data.length - 1] = 0; // 2FA_size = 0
+
+        int proofCounter = 0;
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        // parse into proofs
+        Map<Integer, SatocashProof> proofMap = new HashMap<>();
+        byte[] response = rapdu.getData();
+        int pos = 0;
+        while (pos < response.length) {
+            if (pos + 70 <= response.length) {
+                byte[] proofBytes = new byte[70];
+                System.arraycopy(response, pos, proofBytes, 0, 70);
+                try {
+                    SatocashProof proof = new SatocashProof(proofBytes);
+                    proofMap.put(proof.getIndex(), proof);
+                    proofCounter++;
+                } catch (Exception e) {
+                    logger.warning("Failed to parse proof at position " + pos + ": " + e.getMessage());
+                }
+            }
+            pos += 70;
+        }
+
+        // OP_PROCESS
+        p2 = (byte) 0x02;
+
+        while (true) {
+            // check if all proofs have been recovered
+            if (proofCounter == indexes.length) {
+                return proofMap;
+            }
+
+            capdu = new APDUCommand(cla, ins, p1, p2, new byte[0]);
+            rapdu = this.cardTransmit(capdu);
+            rapdu.checkOK();
+
+            pos = 0;
+            response = rapdu.getData();
+            while (pos < response.length) {
+                if (pos + 70 <= response.length) {
+                    byte[] proofBytes = new byte[70];
+                    System.arraycopy(response, pos, proofBytes, 0, 70);
+                    try {
+                        SatocashProof proof = new SatocashProof(proofBytes);
+                        proofMap.put(proof.getIndex(), proof);
+                        proofCounter++;
+                    } catch (Exception e) {
+                        logger.warning("Failed to parse proof at position " + pos + ": " + e.getMessage());
+                    }
+                }
+                pos += 70;
+            }
+        }
+    }
+
+    /**
+     * Gets proof information from the Satocash applet.
+     *
+     * @param unit the unit type to query
+     * @param infoType the type of information to retrieve
+     * @param indexStart the starting index for the query
+     * @param indexSize the number of items to query
+     * @return the raw proof information data
+     * @throws Exception if the query fails
+     */
+    public byte[] satocashGetProofInfo(byte unit, byte infoType, int indexStart, int indexSize) throws Exception {
+        logger.info("SATOCHIPLIB: satocashGetProofInfo");
+
+        byte cla = (byte) 0xB0;
+        byte ins = Constants.satocashGetProofInfo;
+        byte p1 = unit;
+        byte p2 = infoType;
+
+        byte[] data = new byte[4];
+        data[0] = (byte) (indexStart >> 8);
+        data[1] = (byte) (indexStart & 0xFF);
+        data[2] = (byte) (indexSize >> 8);
+        data[3] = (byte) (indexSize & 0xFF);
+
+        APDUCommand capdu = new APDUCommand(cla, ins, p1, p2, data);
+
+        APDUResponse rapdu = this.cardTransmit(capdu);
+        rapdu.checkOK();
+
+        return rapdu.getData();
     }
 
     /****************************************

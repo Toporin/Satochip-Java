@@ -1,10 +1,8 @@
 package org.satochip.client;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
@@ -18,22 +16,30 @@ public final class Constants {
     * Instruction codes *
     ****************************************/
     public final static byte CLA =  (byte)0xB0;
+
     // Applet initialization
     public final static byte INS_SETUP = (byte) 0x2A;
-    // Keys' use and management
+
+    // Key use and management
     public final static byte INS_IMPORT_KEY = (byte) 0x32;
     public final static byte INS_RESET_KEY = (byte) 0x33;
     public final static byte INS_GET_PUBLIC_FROM_PRIVATE= (byte)0x35;
+
     // External authentication
     public final static byte INS_CREATE_PIN = (byte) 0x40; //TODO: remove?
     public final static byte INS_VERIFY_PIN = (byte) 0x42;
     public final static byte INS_CHANGE_PIN = (byte) 0x44;
     public final static byte INS_UNBLOCK_PIN = (byte) 0x46;
     public final static byte INS_LOGOUT_ALL = (byte) 0x60;
+
     // Status information
     public final static byte INS_LIST_PINS = (byte) 0x48;
     public final static byte INS_GET_STATUS = (byte) 0x3C;
     public final static byte INS_CARD_LABEL = (byte) 0x3D;
+    public final static byte INS_SET_NFC_POLICY = (byte)0x3E;
+    public final static byte INS_SET_NDEF = (byte)0x3F;
+    public final static byte INS_SET_PIN_POLICY = (byte)0x3A;
+
     // HD wallet
     public final static byte INS_BIP32_IMPORT_SEED= (byte) 0x6C;
     public final static byte INS_BIP32_RESET_SEED= (byte) 0x77;
@@ -49,14 +55,21 @@ public final class Constants {
     public final static byte INS_SET_2FA_KEY = (byte) 0x79;    
     public final static byte INS_RESET_2FA_KEY = (byte) 0x78;
     public final static byte INS_SIGN_TRANSACTION_HASH= (byte) 0x7A;
+    public final static byte INS_TAPROOT_TWEAK_PRIVKEY= (byte) 0x7C;
+    public final static byte INS_SIGN_SCHNORR_HASH= (byte) 0x7B;
+    public final static byte INS_MUSIG2_GENERATE_NONCE= (byte) 0x7E;
+    public final static byte INS_MUSIG2_SIGN_HASH= (byte) 0x7F;
+
     // secure channel
     public final static byte INS_INIT_SECURE_CHANNEL = (byte) 0x81;
     public final static byte INS_PROCESS_SECURE_CHANNEL = (byte) 0x82;
+
     // secure import from SeedKeeper
     public final static byte INS_IMPORT_ENCRYPTED_SECRET = (byte) 0xAC;
     public final static byte INS_IMPORT_TRUSTED_PUBKEY = (byte) 0xAA;
     public final static byte INS_EXPORT_TRUSTED_PUBKEY = (byte) 0xAB;
     public final static byte INS_EXPORT_AUTHENTIKEY= (byte) 0xAD;
+
     // Personalization PKI support
     public final static byte INS_IMPORT_PKI_CERTIFICATE = (byte) 0x92;
     public final static byte INS_EXPORT_PKI_CERTIFICATE = (byte) 0x93;
@@ -64,6 +77,7 @@ public final class Constants {
     public final static byte INS_EXPORT_PKI_PUBKEY = (byte) 0x98;
     public final static byte INS_LOCK_PKI = (byte) 0x99;
     public final static byte INS_CHALLENGE_RESPONSE_PKI= (byte) 0x9A;
+
     // reset to factory settings
     public final static byte INS_RESET_TO_FACTORY = (byte) 0xFF;
 
@@ -79,7 +93,6 @@ public final class Constants {
     public final static byte INS_INITIATE_SATODIME_TRANSFER= (byte)0x5A;
 
     // Seedkeeper
-
     public final static byte INS_GET_SEEDKEEPER_STATUS = (byte)0xA7;
     public final static byte INS_GENERATE_SEEDKEEPER_MASTER_SEED = (byte)0xA0;
     public final static byte INS_GENERATE_SEEDKEEPER_RANDOM_SECRET = (byte)0xA3;
@@ -92,7 +105,17 @@ public final class Constants {
     public final static byte INS_PRINT_SEEDKEEPER_LOGS = (byte)0xA9;
     public final static byte INS_DERIVE_SEEDKEEPER_MASTER_PASSWORD = (byte)0xAF;
 
-
+    // Satocash
+    public final static byte satocashGetStatus = (byte)0xB0;
+    public final static byte satocashImportMint = (byte)0xB1;
+    public final static byte satocashExportMint = (byte)0xB2;
+    public final static byte satocashRemoveMint = (byte)0xB3;
+    public final static byte satocashImportKeyset = (byte)0xB4;
+    public final static byte satocashExportKeyset = (byte)0xB5;
+    public final static byte satocashRemoveKeyset = (byte)0xB6;
+    public final static byte satocashImportProof = (byte)0xB7;
+    public final static byte satocashExportProofs = (byte)0xB8;
+    public final static byte satocashGetProofInfo = (byte)0xB9;
 
     /****************************************
     *          Error codes                 *
@@ -182,6 +205,10 @@ public final class Constants {
     /** For debugging purposes 2 */
     public final static short SW_DEBUG_FLAG = (short) 0x9FFF;
 
+    /** NFC interface disabled **/
+    public final static short SW_NFC_DISABLED = (short) 0x9C48;
+    public final static short SW_NFC_BLOCKED = (short) 0x9C49;
+
     /****************************************
     *           Other  constants            *
     ****************************************/
@@ -203,10 +230,10 @@ public final class Constants {
     /****************************************
      *               Seedkeeper             *
      ****************************************/
-    public final static byte LOCK_ERROR = (byte)0x9C30;
-    public final static byte EXPORT_NOT_ALLOWED = (byte)0x9C31;
-    public final static byte USAGE_NOT_ALLOWED = (byte)0x9C36;
-    public final static byte WRONG_SECRET_TYPE = (byte)0x9C38;
+    public final static byte SW_LOCK_ERROR = (byte)0x9C30;
+    public final static byte SW_EXPORT_NOT_ALLOWED = (byte)0x9C31;
+    public final static byte SW_USAGE_NOT_ALLOWED = (byte)0x9C36;
+    public final static byte SW_WRONG_SECRET_TYPE = (byte)0x9C38;
 
     /****************************************
     *               Satodime                   *

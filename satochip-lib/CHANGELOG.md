@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3]:
+
+Merges the Schnorr/MuSig2 and Satocash support from 0.3.1-0.3.2 with the PIN and
+signature-parsing fixes from 0.2.6. No API was removed; the two lines of development touched
+different commands.
+
+* Make the Schnorr/Taproot/MuSig2 commands public. `cardTaprootTweakPrivateKey()`,
+  `cardMusig2GenerateNonce()` and `cardMusig2Sign()` were declared private in 0.3.2 with no public
+  wrapper, so the feature the 0.3.2 notes advertise was unreachable from outside the library: only
+  `cardSignSchnorrHash()` was public, and it needs a prior taproot tweak.
+* Fix `cardTaprootTweakPrivateKey()` for BIP86 key-path-only spending. It required a 32-byte tweak,
+  but Satochip v0.16 expects `tweak_size = 0` when the output commits to no script tree, and the
+  two are **not** interchangeable: BIP341 hashes `x(P)` alone in the first case and
+  `x(P) || 32 zero bytes` in the second, producing a different output key. A client sending 32 zero
+  bytes to mean "no script tree" would therefore derive the wrong address. `tweak` may now be
+  `null` (or empty) for `tweak_size = 0`; any length other than 0 or 32 is rejected.
+  Verified on a simulated v0.16 card: both forms produce signatures that verify against an
+  independent BIP340 verifier, and the two output keys differ as the specification requires.
+* `cardUnblockPin()` keeps the applet-aware behaviour introduced in 0.2.6 (see below): Satochip
+  v0.16 and later get the length-prefixed payload, everything else keeps the legacy one.
+* The DER signature-parsing fix from 0.2.6 also benefits the new Schnorr and MuSig2 commands, which
+  parse card signatures through the same code path.
+
+## [0.3.2]:
+
+Add Schnorr signature & Musig2 signature support for Satochip:
+* byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag)
+* byte[] cardSignSchnorrHash(byte[] txhash, byte[] chalresponse)
+* byte[][] cardMusig2GenerateNonce(int keynbr, byte[] aggpk, byte[] msg, byte[] extra)
+* byte[] cardMusig2Sign(int keynbr, byte[] secnonce, byte[] b, byte[] ea, Boolean r_has_even_y, Boolean ggacc_is_1)
+
+## [0.3.1]:
+
+* Add Satocash support (wip)
 ## [0.2.6]:
 
 * Fix `cardUnblockPin()` for Satochip applet v0.16: the applet changed the UNBLOCK PIN data format to `[PUK_size(1b) | PUK | (optional) PIN_size(1b) | PIN]`, but the library still sent the bare PUK with no length prefix, so unblocking a v0.16 Satochip always failed. The format is now selected from the applet type and the protocol version reported by GET STATUS (cached after the first select): Satochip v0.16 and later get the length-prefixed payload, while earlier Satochip versions, SeedKeeper and Satodime keep the legacy bare-PUK payload.
