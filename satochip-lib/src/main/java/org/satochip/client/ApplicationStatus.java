@@ -70,7 +70,6 @@ public class ApplicationStatus {
                 needs_secure_channel= (data[11]==0X00)? false : true;   
             } else {
                 needs_secure_channel= false;
-                needs_2FA= false; //default value
             }
         } else if (sw==0x9c04){
             setup_done= false;
@@ -90,6 +89,9 @@ public class ApplicationStatus {
     }
     public boolean needsSecureChannel() {
         return needs_secure_channel;
+    }
+    public boolean needs2FA() {
+        return needs_2FA;
     }
 
     // TODO: other gettters
