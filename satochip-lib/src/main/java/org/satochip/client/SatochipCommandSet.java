@@ -1311,13 +1311,17 @@ public class SatochipCommandSet {
      *
      * <p><strong>Warning:</strong> Ensure the seed is properly backed up before importing.</p>
      *
-     * @param masterseed the master seed bytes to import (16-64 bytes recommended)
+     * @param masterseed the master seed bytes to import (16-64 bytes)
      * @return the APDU response from the import command
+     * @throws IllegalArgumentException if masterseed is null or outside 16-64 bytes
+     * @throws APDUException if the card rejects the import
      * @see #cardResetSeed(byte[], byte[])
      * @see #cardBip32GetExtendedKey(String, Byte, Integer)
      */
-    public APDUResponse cardBip32ImportSeed(byte[] masterseed) {
-        //TODO: check seed (length...)
+    public APDUResponse cardBip32ImportSeed(byte[] masterseed) throws APDUException {
+        if (masterseed == null || masterseed.length < 16 || masterseed.length > 64) {
+            throw new IllegalArgumentException("Wrong seed length (should be 16-64)");
+        }
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_IMPORT_SEED, masterseed.length, 0x00, masterseed);
 
         //logger.info("SATOCHIPLIB: C-APDU cardBip32ImportSeed:" + plainApdu.toHexString());
@@ -1325,7 +1329,7 @@ public class SatochipCommandSet {
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardBip32ImportSeed:" + respApdu.toHexString());
 
-        return respApdu;
+        return respApdu.checkOK();
     }
 
     /**
@@ -1689,13 +1693,14 @@ public class SatochipCommandSet {
      * @param chalresponse optional 20-byte 2FA challenge response, or null
      * @return the APDU response containing the DER-encoded signature
      * @throws IllegalArgumentException if txhash is not 32 bytes or chalresponse is not 20 bytes
+     * @throws APDUException if the card rejects signing
      * @see #cardBip32GetExtendedKey(String, Byte, Integer)
      */
-    public APDUResponse cardSignTransactionHash(byte keynbr, byte[] txhash, byte[] chalresponse) {
+    public APDUResponse cardSignTransactionHash(byte keynbr, byte[] txhash, byte[] chalresponse) throws APDUException {
 
         byte[] data;
-        if (txhash.length != 32) {
-            throw new RuntimeException("Wrong txhash length (should be 32)");
+        if (txhash == null || txhash.length != 32) {
+            throw new IllegalArgumentException("Wrong txhash length (should be 32)");
         }
         if (chalresponse == null) {
             data = new byte[32];
@@ -1709,16 +1714,15 @@ public class SatochipCommandSet {
             data[offset++] = (byte) 0x00;
             System.arraycopy(chalresponse, 0, data, offset, chalresponse.length);
         } else {
-            throw new RuntimeException("Wrong challenge-response length (should be 20)");
+            throw new IllegalArgumentException("Wrong challenge-response length (should be 20)");
         }
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_TRANSACTION_HASH, keynbr, 0x00, data);
 
         logger.info("SATOCHIPLIB: C-APDU cardSignTransactionHash:" + plainApdu.toHexString());
         APDUResponse respApdu = this.cardTransmit(plainApdu);
         logger.info("SATOCHIPLIB: R-APDU cardSignTransactionHash:" + respApdu.toHexString());
-        // TODO: check SW code for particular status
 
-        return respApdu;
+        return respApdu.checkOK();
     }
 
 
@@ -1898,7 +1902,7 @@ public class SatochipCommandSet {
         data[offset++] = (byte) msg.length;
         System.arraycopy(msg, 0, data, offset, msg.length);
         offset+=msg.length;
-        data[offset++] = (byte) aggpk.length;
+        data[offset++] = (byte) extra.length;
         System.arraycopy(extra, 0, data, offset, extra.length);
         offset+=extra.length;
 
