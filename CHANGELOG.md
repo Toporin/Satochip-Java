@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This file covers the whole repository. Entries before 0.3.4 describe `satochip-lib` only, which is
 where this changelog previously lived.
 
+## [0.3.5]:
+
+Add `cardResetFactoryV3()`: factory reset for Satochip v0.16 and higher, which replaces the legacy
+multi-command reset with a single command (ins 0xFD, p1 0xAA, p2 0x55) sent through the secure
+channel. The reset requires neither the PIN nor a blocked PUK, so it also works on a card whose PIN
+is forgotten.
+
+The card type and the protocol version are checked first: the method throws
+`UnsupportedOperationException` on a non-Satochip card or an applet older than v0.16, and an
+`APDUException` if the card is not set up. On success the secure channel, the cached status and the
+cached PIN are reset, as the card is back to its fresh-install state.
+
+The legacy `cardSendResetCommand()` (Satochip below v0.16, SeedKeeper) is unchanged.
+
 ## [0.3.4]:
 
 Java 17 support. The build now runs on JDK 17 (Gradle 4.10.2 -> 8.10, Android Gradle Plugin

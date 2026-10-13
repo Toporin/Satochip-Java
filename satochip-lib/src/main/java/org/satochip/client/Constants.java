@@ -80,6 +80,10 @@ public final class Constants {
 
     // reset to factory settings
     public final static byte INS_RESET_TO_FACTORY = (byte) 0xFF;
+    // reset to factory settings v3 (Satochip v0.16 and higher), with magic P1/P2
+    public final static byte INS_RESET_TO_FACTORY_V3 = (byte) 0xFD;
+    public final static byte FACTORY_RESET_V3_P1_MAGIC = (byte) 0xAA;
+    public final static byte FACTORY_RESET_V3_P2_MAGIC = (byte) 0x55;
 
     // Satodime
     public final static byte INS_GET_SATODIME_STATUS= (byte)0x50;

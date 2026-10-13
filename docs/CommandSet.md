@@ -131,6 +131,20 @@ Performs initial card setup with default parameters.
 
 **Returns:** `APDUResponse`
 
+##### `cardResetFactoryV3()`
+Resets a Satochip v0.16 or higher to its factory state, erasing the seed, imported keys, 2FA, PIN
+and PUK. The reset is a single command sent through the secure channel, and requires neither the
+PIN nor a blocked PUK, so it also works on a card whose PIN is forgotten. The authentikey and the
+personalization certificate survive the reset. For older Satochip and for SeedKeeper, use
+`cardSendResetCommand()`.
+
+**Returns:** `APDUResponse`  
+**Throws:**
+- `UnsupportedOperationException` - Not a Satochip, or applet older than v0.16
+- `APDUException` - Card setup not done, or reset refused by the card
+
+**Warning:** irreversible. Make sure a working backup of the seed exists.
+
 ##### `cardBip32ImportSeed(byte[] seed)`
 Imports a BIP32 master seed into the card. This master seed can be obtained from a BIP39 mnemonic using PBKDF2 derivation
 as described in the [BIP39 specification](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki#from-mnemonic-to-seed).

@@ -984,6 +984,80 @@ public class SatochipCommandSet {
         return respApdu;
     }
 
+    /**
+     * Protocol version from which the Satochip applet supports factory reset v3, encoded as
+     * {@link ApplicationStatus#getProtocolVersion()} reports it: 0x0010 is protocol 0.16.
+     */
+    private static final int PROTOCOL_VERSION_FACTORY_RESET_V3 = 0x0010; // v0.16
+
+    /**
+     * Resets the card to its factory state (factory reset v3).
+     *
+     * <p>Factory reset v3 is a single command (ins 0xFD, p1 0xAA, p2 0x55) sent through the
+     * secure channel. It requires neither the PIN nor a blocked PUK, so it also works on a card
+     * whose PIN is forgotten.</p>
+     *
+     * <p>Factory reset erases the seed, the imported keys, the 2FA, the PIN and the PUK, and
+     * resets the card label and policies. The authentikey and the personalization certificate
+     * are kept, so the card can still prove its authenticity afterwards.</p>
+     *
+     * <p><strong>Warning:</strong> Factory reset is irreversible and will permanently
+     * destroy all user data on the card. Use with extreme caution.</p>
+     *
+     * <p><strong>Compatibility: </strong> Satochip v0.16-0.0 and higher only. For older Satochip
+     * and for SeedKeeper, see {@link #cardSendResetCommand()}.</p>
+     *
+     * @return the APDU response from the reset command
+     * @throws UnsupportedOperationException if the card is not a Satochip v0.16 or higher
+     * @throws APDUException if the card setup is not done, or the card refuses the reset
+     * @throws Exception if the communication with the card fails
+     */
+    public APDUResponse cardResetFactoryV3() throws Exception {
+        logger.info("SATOCHIPLIB: cardResetFactoryV3");
+
+        cardGetStatus();
+        if (!status.isSetupDone()) {
+            // nothing to reset, and the applet refuses the command before setup
+            throw new APDUException(0x9C04, "Card setup not done");
+        }
+        if (!"satochip".equals(cardType)) {
+            throw new UnsupportedOperationException("Factory reset v3 is not supported by " + cardType);
+        }
+        if (status.getProtocolVersion() < PROTOCOL_VERSION_FACTORY_RESET_V3) {
+            throw new UnsupportedOperationException(
+                    "Factory reset v3 requires a Satochip applet v0.16-0.0 or higher, found v"
+                            + status.getCardVersionString());
+        }
+
+        APDUCommand plainApdu = new APDUCommand(
+                0xB0,
+                INS_RESET_TO_FACTORY_V3,
+                FACTORY_RESET_V3_P1_MAGIC,
+                FACTORY_RESET_V3_P2_MAGIC,
+                new byte[0]
+        );
+        logger.warning("SATOCHIPLIB: C-APDU cardResetFactoryV3:" + plainApdu.toHexString());
+        APDUResponse respApdu = this.cardTransmit(plainApdu);
+        logger.warning("SATOCHIPLIB: R-APDU cardResetFactoryV3:" + respApdu.toHexString());
+
+        int sw = respApdu.getSw();
+        if (sw == 0x9000) {
+            logger.warning("SATOCHIPLIB: CARD HAS BEEN RESET TO FACTORY!");
+            // the card closed its secure channel and is back to its fresh-install state,
+            // without PIN: the cached PIN and status are stale
+            secureChannel.resetSecureChannel();
+            status = null;
+            pin0 = null;
+        } else if (sw == 0x9C04) {
+            throw new APDUException(sw, "Card setup not done");
+        } else if (sw == 0x6D00) {
+            throw new UnsupportedOperationException("Factory reset v3 is not supported by this card");
+        } else {
+            throw new APDUException(sw, "Factory reset failed");
+        }
+        return respApdu;
+    }
+
     /****************************************
      *             PIN MGMT                  *
      ****************************************/
