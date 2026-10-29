@@ -234,10 +234,13 @@ public final class Constants {
     /****************************************
      *               Seedkeeper             *
      ****************************************/
-    public final static byte SW_LOCK_ERROR = (byte)0x9C30;
-    public final static byte SW_EXPORT_NOT_ALLOWED = (byte)0x9C31;
-    public final static byte SW_USAGE_NOT_ALLOWED = (byte)0x9C36;
-    public final static byte SW_WRONG_SECRET_TYPE = (byte)0x9C38;
+    // int, unlike the short constants above (where 0x9Cxx is negative), so that they compare equal
+    // to APDUResponse.getSw() and APDUException.sw. They used to be byte, truncated to e.g. 0x30.
+    /** An interrupted multi-step operation held the lock; the card releases it, so retry the command. See {@link org.satochip.io.LockErrorException}. **/
+    public final static int SW_LOCK_ERROR = 0x9C30;
+    public final static int SW_EXPORT_NOT_ALLOWED = 0x9C31;
+    public final static int SW_USAGE_NOT_ALLOWED = 0x9C36;
+    public final static int SW_WRONG_SECRET_TYPE = 0x9C38;
 
     /****************************************
     *               Satodime                   *

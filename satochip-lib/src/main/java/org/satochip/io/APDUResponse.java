@@ -18,6 +18,8 @@ public class APDUResponse {
   public static final int SW_WRONG_PIN_LEGACY = 0x9C02;
   public static final int SW_BLOCKED_PIN = 0x9C0C;
   public static final int SW_FACTORY_RESET = 0xFF00;
+  /** SeedKeeper: an interrupted multi-step operation held the lock, see {@link LockErrorException}. */
+  public static final int SW_LOCK_ERROR = 0x9C30;
 
   
   private byte[] apdu;
@@ -101,6 +103,8 @@ public class APDUResponse {
         throw new APDUException(this.sw, "security condition not satisfied");
       case SW_AUTHENTICATION_METHOD_BLOCKED:
         throw new APDUException(this.sw, "authentication method blocked");
+      case SW_LOCK_ERROR:
+        throw new LockErrorException("lock error");
       default:
         throw new APDUException(this.sw,  "Unexpected error SW");
     }
@@ -132,6 +136,9 @@ public class APDUResponse {
       }
     }
 
+    if (this.sw == SW_LOCK_ERROR) {
+      throw new LockErrorException(message);
+    }
     throw new APDUException(this.sw, message);
   }
 
