@@ -99,7 +99,12 @@ public class SatochipCommandSet {
      * Creates a new SatochipCommandSet instance with the specified APDU channel.
      *
      * <p>This constructor initializes all necessary components including the secure channel
-     * session, parser, and Satodime status. The logger is set to WARNING level by default.</p>
+     * session, parser, and Satodime status.</p>
+     *
+     * <p>The constructor does not touch the level of the {@code org.satochip.client} logger, so the
+     * level chosen by the application (through {@code java.util.logging} configuration or
+     * {@link #setLoggerLevel(Level)}) is kept across instances. Routine messages are logged at
+     * {@code FINE} and below, so they are hidden by the default {@code INFO} threshold.</p>
      *
      * @param apduChannel the APDU channel for communication with the smart card.
      *                   Must not be null and should be properly connected.
@@ -113,35 +118,43 @@ public class SatochipCommandSet {
         this.secureChannel = new SecureChannelSession();
         this.parser = new SatochipParser();
         this.satodimeStatus = new SatodimeStatus();
-        logger.setLevel(Level.WARNING);
     }
 
     /**
-     * Sets the logging level using a string identifier.
+     * Sets the level of the {@code org.satochip.client} logger, shared by all instances, using a
+     * string identifier.
      *
-     * <p>Supported levels:</p>
+     * <p>Accepted values (case-insensitive):</p>
      * <ul>
-     *   <li>"info" - Enables detailed logging information</li>
-     *   <li>"warning" - Shows only warnings and errors (default)</li>
+     *   <li>"debug" - routine operations and card status ({@code FINE})</li>
+     *   <li>any {@link Level} name or value: "off", "severe", "warning", "info", "config", "fine",
+     *       "finer", "finest", "all"</li>
      * </ul>
      *
      * <p>Any unrecognized level defaults to WARNING.</p>
      *
-     * @param level the logging level as a string ("info" or "warning")
+     * <p>The library never logs secrets (PIN, PUK, seeds, private keys, SeedKeeper secrets) nor
+     * personal data (card or secret labels), whatever the level. Note that with
+     * {@code java.util.logging}, a record must also pass the level of the handler to be published:
+     * the default console handler of a desktop JVM stops at {@code INFO}.</p>
+     *
+     * @param level the logging level as a string (e.g. "debug", "info", "warning")
      * @see #setLoggerLevel(Level)
      */
     public void setLoggerLevel(String level) {
-        switch (level) {
-            case "info":
-                logger.setLevel(Level.INFO);
-                break;
-            case "warning":
-                logger.setLevel(Level.WARNING);
-                break;
-            default:
-                logger.setLevel(Level.WARNING);
-                break;
+        Level parsed;
+        if (level == null) {
+            parsed = Level.WARNING;
+        } else if (level.equalsIgnoreCase("debug")) {
+            parsed = Level.FINE;
+        } else {
+            try {
+                parsed = Level.parse(level.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                parsed = Level.WARNING;
+            }
         }
+        logger.setLevel(parsed);
     }
 
     /**
