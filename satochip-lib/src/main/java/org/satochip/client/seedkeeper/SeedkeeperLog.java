@@ -11,7 +11,6 @@ public class SeedkeeperLog {
 
     public SeedkeeperLog(byte[] response) throws Exception {
         if (response.length < LOG_SIZE) {
-            System.out.println("Log record has the wrong length " + response.length + ", should be " + LOG_SIZE);
             throw new Exception("Log record has the wrong length " + response.length + ", should be " + LOG_SIZE);
         }
 
@@ -19,5 +18,10 @@ public class SeedkeeperLog {
         sid1 = (response[1] & 0xFF) * 256 + (response[2] & 0xFF);
         sid2 = (response[3] & 0xFF) * 256 + (response[4] & 0xFF);
         ins = response[0];
+    }
+
+    @Override
+    public String toString() {
+        return String.format("ins:%02X sid1:%d sid2:%d sw:%04X", ins, sid1, sid2, sw);
     }
 }

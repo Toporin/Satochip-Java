@@ -1,6 +1,7 @@
 package org.satochip.globalplatform;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.satochip.client.BouncyCastle;
 
 import java.security.*;
 import java.util.Arrays;
@@ -23,6 +24,14 @@ public class Crypto {
 
   private static boolean bouncyCastleLoaded = false;
 
+  /**
+   * Replaces the provider registered as "BC" with the bundled BouncyCastle, for the whole process.
+   *
+   * @deprecated the library no longer needs it: it passes {@link BouncyCastle#PROVIDER} directly
+   * to the JCA calls. On Android, calling it also removes the platform's own "BC" provider for the
+   * whole application. Register a provider yourself if your own code looks one up by name.
+   */
+  @Deprecated
   public static void addBouncyCastleProvider() {
     if (!bouncyCastleLoaded) {
       Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
@@ -52,7 +61,7 @@ public class Crypto {
 
       SecretKeySpec tmpKey = new SecretKeySpec(key24, "DESede");
 
-      Cipher cipher = Cipher.getInstance("DESede/CBC/NoPadding", "BC");
+      Cipher cipher = Cipher.getInstance("DESede/CBC/NoPadding", BouncyCastle.PROVIDER);
       cipher.init(Cipher.ENCRYPT_MODE, tmpKey, new IvParameterSpec(NullBytes8));
 
       return cipher.doFinal(derivationData);
@@ -60,8 +69,6 @@ public class Crypto {
       throw new IllegalStateException("error generating session keys.", e);
     } catch (InvalidKeyException | IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
       throw new RuntimeException("error generating session keys.", e);
-    } catch (NoSuchProviderException e) {
-      throw new RuntimeException("BouncyCastle not installed");
     }
   }
 
@@ -110,7 +117,7 @@ public class Crypto {
   public static byte[] mac3des(byte[] keyData, byte[] data, byte[] iv) {
     try {
       SecretKeySpec key = new SecretKeySpec(resizeKey24(keyData), "DESede");
-      Cipher cipher = Cipher.getInstance("DESede/CBC/NoPadding", "BC");
+      Cipher cipher = Cipher.getInstance("DESede/CBC/NoPadding", BouncyCastle.PROVIDER);
       cipher.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(iv));
       byte[] result = cipher.doFinal(data, 0, 24);
       byte[] tail = new byte[8];
@@ -123,7 +130,7 @@ public class Crypto {
 
   public static byte[] ecb3des(byte[] key, byte[] data) {
     try {
-      Cipher cipher = Cipher.getInstance("DESede/ECB/NoPadding", "BC");
+      Cipher cipher = Cipher.getInstance("DESede/ECB/NoPadding", BouncyCastle.PROVIDER);
       SecretKeySpec keyDes = new SecretKeySpec(resizeKey24(key), "DES");
       cipher.init(Cipher.ENCRYPT_MODE, keyDes);
       return cipher.doFinal(data);
@@ -147,11 +154,11 @@ public class Crypto {
   public static byte[] macFull3des(byte[] keyData, byte[] data, byte[] iv) {
     try {
       SecretKeySpec keyDes = new SecretKeySpec(resizeKey8(keyData), "DES");
-      Cipher cipherDes = Cipher.getInstance("DES/CBC/NoPadding", "BC");
+      Cipher cipherDes = Cipher.getInstance("DES/CBC/NoPadding", BouncyCastle.PROVIDER);
       cipherDes.init(Cipher.ENCRYPT_MODE, keyDes, new IvParameterSpec(iv));
 
       SecretKeySpec keyDes3 = new SecretKeySpec(resizeKey24(keyData), "DESede");
-      Cipher cipherDes3 = Cipher.getInstance("DESede/CBC/NoPadding", "BC");
+      Cipher cipherDes3 = Cipher.getInstance("DESede/CBC/NoPadding", BouncyCastle.PROVIDER);
       byte[] des3Iv = iv.clone();
 
       if (data.length > 8) {
@@ -208,7 +215,7 @@ public class Crypto {
    */
   public static byte[] encryptICV(byte[] macKeyData, byte[] mac) {
     try {
-      Cipher cipher = Cipher.getInstance("DES/ECB/NoPadding", "BC");
+      Cipher cipher = Cipher.getInstance("DES/ECB/NoPadding", BouncyCastle.PROVIDER);
       SecretKeySpec key = new SecretKeySpec(resizeKey8(macKeyData), "DES");
       cipher.init(Cipher.ENCRYPT_MODE, key);
       return cipher.doFinal(mac);

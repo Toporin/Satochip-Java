@@ -156,7 +156,7 @@ public class Bip32Path {
      * @see Bip32Path
      */
     public Bip32Path(String stringPath) throws Exception {
-        logger.info("SATOCHIPLIB: parseBip32PathToBytes: Start ");
+        logger.finest("SATOCHIPLIB: parseBip32PathToBytes");
 
         String[] splitPath = stringPath.split("/");
         if (splitPath[0].equals("m")) {
@@ -321,7 +321,6 @@ public class Bip32Path {
      * @see #parseBip32PathToBytes(String)
      */
     public static String getBip32PathParentPath(String bip32path) throws Exception {
-        System.out.println("In getBip32PathParentPath");
         String[] splitPath = bip32path.split("/");
         if (splitPath.length <= 1) {
             throw new Exception("Invalid BIP32 path: " + bip32path);

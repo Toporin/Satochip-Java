@@ -27,11 +27,13 @@ Satochip and Seedkeeper require a user PIN to access most card functionalities. 
 Add the library to your Android project:
 
 ```gradle
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
 dependencies {
-    implementation files('libs/satochip-lib-0.3.4.jar')
-    // satochip-android builds as an Android library; the Gradle build produces
-    // satochip-android/build/outputs/aar/satochip-android-release.aar
-    implementation files('libs/satochip-android-release.aar')
+    // pulls satochip-lib transitively
+    implementation 'com.github.Toporin.Satochip-Java:satochip-android:<tag>'
 }
 ```
 
@@ -105,7 +107,8 @@ public class MainActivity extends AppCompatActivity {
         // Initialize NFC components
         cardManager = new NFCCardManager();
         cardManager.setCardListener(new MyCardHandler());
-        cardManager.start();
+        // no start() needed: the card session runs in MyCardHandler.onConnected(), called
+        // from the NFC reader thread when a card is tapped; the channel is closed afterwards
         
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         nfcAdapter.enableReaderMode(

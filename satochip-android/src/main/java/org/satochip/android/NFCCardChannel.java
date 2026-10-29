@@ -1,7 +1,6 @@
 package org.satochip.android;
 
 import android.nfc.tech.IsoDep;
-import android.util.Log;
 import org.satochip.io.APDUCommand;
 import org.satochip.io.APDUResponse;
 import org.satochip.io.CardChannel;
@@ -12,8 +11,6 @@ import java.io.IOException;
  * Implementation of the CardChannel interface using the Android NFC API.
  */
 public class NFCCardChannel implements CardChannel {
-  private static final String TAG = "CardChannel";
-
   private IsoDep isoDep;
 
   public NFCCardChannel(IsoDep isoDep) {
@@ -22,12 +19,11 @@ public class NFCCardChannel implements CardChannel {
 
   @Override
   public APDUResponse send(APDUCommand cmd) throws IOException {
+    // Not logged here: SatochipCommandSet logs each command before secure channel encryption,
+    // whereas this channel would only see the encrypted envelope.
     byte[] apdu = cmd.serialize();
-    Log.d(TAG, String.format("COMMAND CLA: %02X INS: %02X P1: %02X P2: %02X LC: %02X", cmd.getCla(), cmd.getIns(), cmd.getP1(), cmd.getP2(), cmd.getData().length));
     byte[] resp = this.isoDep.transceive(apdu);
-    APDUResponse response = new APDUResponse(resp);
-    Log.d(TAG, String.format("RESPONSE LEN: %02X, SW: %04X %n-----------------------", response.getData().length, response.getSw()));
-    return response;
+    return new APDUResponse(resp);
   }
 
   @Override

@@ -2,7 +2,7 @@ package org.satochip.client.seedkeeper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import org.bitcoinj.core.Sha256Hash;
+import org.satochip.client.Sha256;
 
 public class SeedkeeperSecretHeader {
 
@@ -99,7 +99,7 @@ public class SeedkeeperSecretHeader {
     }
 
     public static byte[] getFingerprintBytes(byte[] secretBytes) {
-        byte[] secretHash = Sha256Hash.hash(secretBytes);
+        byte[] secretHash = Sha256.hash(secretBytes);
         return Arrays.copyOfRange(secretHash, 0, 4);
     }
 }

@@ -1,4 +1,5 @@
 apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
 
 android {
     namespace 'org.satochip.android'
@@ -16,8 +17,27 @@ android {
     lint {
         abortOnError false
     }
+
+    // Publish the release variant as an AAR (with sources), see the publication below.
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
 }
 
 dependencies {
     api project(':satochip-lib')
+}
+
+// The `release` software component only exists once the Android plugin has configured the variants.
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                artifactId = 'satochip-android'
+                from components.release
+            }
+        }
+    }
 }

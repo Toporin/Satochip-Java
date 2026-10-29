@@ -1,7 +1,8 @@
 # JitPack build configuration.
-# satochip-android is deliberately excluded: it needs the Android SDK, which JitPack
-# would have to provision, and consumers of the JVM library do not need it.
+# JitPack images ship the Android SDK (ANDROID_HOME is set), so satochip-android is built and
+# published along with the two JVM modules. The Android Gradle Plugin downloads the SDK platform
+# matching compileSdk if the image does not have it.
 jdk:
   - openjdk17
 install:
-  - ./gradlew :satochip-lib:publishToMavenLocal :satochip-desktop:publishToMavenLocal
+  - ./gradlew :satochip-lib:publishToMavenLocal :satochip-desktop:publishToMavenLocal :satochip-android:publishToMavenLocal

@@ -20,13 +20,12 @@ dependencies {
     // `api`, not `implementation`: SatochipParser.Recover() returns
     // org.bouncycastle.math.ec.ECPoint, so BouncyCastle is part of this module's
     // public API and callers need it on their compile classpath.
-    api 'org.bouncycastle:bcprov-jdk18on:1.78'
-    // bitcoinj brings its own BouncyCastle build (bcprov-jdk15to18) under a different
-    // artifactId, which Gradle cannot dedupe against ours; exclude it so only one
-    // copy of the org.bouncycastle packages is on the classpath.
-    implementation('org.bitcoinj:bitcoinj-core:0.16.2') {
-        exclude group: 'org.bouncycastle'
-    }
+    // bcprov-jdk15to18, not bcprov-jdk18on: both ship the same classes, but Gradle treats different
+    // artifactIds as different libraries and puts both on the classpath (duplicate classes on
+    // Android, "signer information does not match" on the JVM). BitcoinJ and other wallet libraries
+    // depend on bcprov-jdk15to18, so with the same artifactId Gradle simply keeps the newest
+    // version and consumers need no exclusions. It also still covers Java 8 / Android.
+    api 'org.bouncycastle:bcprov-jdk15to18:1.86'
 }
 
 publishing {

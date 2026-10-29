@@ -10,7 +10,6 @@ import java.util.logging.Logger;
 import org.bouncycastle.crypto.digests.SHA1Digest;
 import org.bouncycastle.crypto.macs.HMac;
 import org.bouncycastle.crypto.params.KeyParameter;
-import org.bouncycastle.util.encoders.Hex;
 
 /**
  * Parses the result of a SATODIME_GET_STATUS command retrieving application status.
@@ -198,14 +197,14 @@ public class SatodimeStatus {
     }
      // todo: remove?
     public void setUnlockCounter(byte[] unlock_counter){
-        logger.info("SATOCHIPLIB: setUnlockCounter: "+ Hex.toHexString(unlock_counter));
+        logger.fine("SATOCHIPLIB: setUnlockCounter");
         if (unlock_counter!=null){
             System.arraycopy(unlock_counter, 0, this.unlock_counter, 0, SIZE_UNLOCK_COUNTER);
         }
     }
   
     public void incrementUnlockCounter(){
-        logger.info("SATOCHIPLIB: incrementUnlockCounter: "+ Hex.toHexString(unlock_counter));
+        logger.fine("SATOCHIPLIB: incrementUnlockCounter");
         // convert byte array to int
         ByteBuffer bb = ByteBuffer.wrap(this.unlock_counter); // big-endian by default
         int counterInt= bb.getInt(); 
@@ -217,7 +216,6 @@ public class SatodimeStatus {
     }
     
     public byte[] computeUnlockCode(byte[] challenge){
-        logger.info("SATOCHIPLIB: computeUnlockCode counter: "+ Hex.toHexString(unlock_counter));
         HMac hMac = new HMac(new SHA1Digest());
         hMac.init(new KeyParameter(unlock_secret));
         hMac.update(challenge, 0, challenge.length);

@@ -1,6 +1,5 @@
 package org.satochip.desktop;
 
-import org.satochip.globalplatform.Crypto;
 import org.satochip.io.APDUCommand;
 import org.satochip.io.APDUResponse;
 import org.satochip.io.CardChannel;
@@ -14,9 +13,6 @@ import java.io.IOException;
  * Implementation of a CardChannel using the Java Smartcard I/O API,
  */
 public class PCSCCardChannel implements CardChannel {
-  static {
-    Crypto.addBouncyCastleProvider();
-  }
 
   private javax.smartcardio.CardChannel cardChannel;
 

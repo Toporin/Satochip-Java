@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Base64;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -148,11 +149,10 @@ public class SatochipParser{
      * @see <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki">BIP85 Specification</a>
      */
     public byte[][] parseBip85GetExtendedKey(APDUResponse rapdu){
-        logger.info("SATOCHIPLIB: parseBip85GetExtendedKey: Start ");
+        logger.fine("SATOCHIPLIB: parseBip85GetExtendedKey: Start ");
 
         try {
             byte[] data = rapdu.getData();
-            logger.info("SATOCHIPLIB: parseBip85GetExtendedKey data: " + toHexString(data));
 
             int entropySize = 256 * (data[0] & 0xFF) + (data[1] & 0xFF);
             byte[] entropyBytes = Arrays.copyOfRange(data, 2, 2 + entropySize);
@@ -190,7 +190,6 @@ public class SatochipParser{
 
         try{
             byte[] data= rapdu.getData();
-            logger.info("SATOCHIPLIB: parseInitiateSecureChannel data: " + toHexString(data));
 
             // data= [coordxSize | coordx | sig1Size | sig1 |  sig2Size | sig2]
             int offset=0;
@@ -254,7 +253,6 @@ public class SatochipParser{
         try{
             byte[] data= rapdu.getData();
             int dataLength = data.length;
-            logger.info("SATOCHIPLIB: parseInitiateSecureChannel data: " + toHexString(data));
 
             // data= [coordxSize | coordx | sig1Size | sig1 |  sig2Size | sig2 | coordxSize(optional) | coordxAuthentikey(optional)]
             int offset=0;
@@ -333,7 +331,6 @@ public class SatochipParser{
     public byte[] parseBip32GetAuthentikey(APDUResponse rapdu){
         try{
             byte[] data= rapdu.getData();
-            logger.info("SATOCHIPLIB: parseBip32GetAuthentikey data: " + toHexString(data));
             // data: [coordx_size(2b) | coordx | sig_size(2b) | sig ]
 
             int offset=0;
@@ -381,7 +378,6 @@ public class SatochipParser{
     public byte[] parseExportPkiPubkey(APDUResponse rapdu){
         try{
             byte[] data= rapdu.getData();
-            logger.info("SATOCHIPLIB: parseExportPkiPubkey data: " + toHexString(data));
             // data: [autehntikey(65b) | sig_size(2b - option) | sig(option) ]
             byte[] pubkey= new byte[65];
             System.arraycopy(data, 0, pubkey, 0, pubkey.length);
@@ -419,7 +415,6 @@ public class SatochipParser{
 
         try{
             byte[] data= rapdu.getData();
-            logger.info("SATOCHIPLIB: parseBip32GetExtendedKey data: " + toHexString(data));
             //data: [chaincode(32b) | coordx_size(2b) | coordx | sig_size(2b) | sig | sig_size(2b) | sig2]
 
             int offset=0;
@@ -487,8 +482,7 @@ public class SatochipParser{
 
         try{
             byte[] data= rapdu.getData();
-            logger.info("SATOCHIPLIB: parseSatodimeGetPubkey data: " + toHexString(data));
-            logger.info("SATOCHIPLIB: parseSatodimeGetPubkey authentikey: " + toHexString(authentikey));
+            logger.fine("SATOCHIPLIB: parseSatodimeGetPubkey authentikey: " + toHexString(authentikey));
             //data: [ pubkey_size(2b) | pubkey | sig_size(2b) | sig ]
 
             int offset=0;
@@ -510,7 +504,6 @@ public class SatochipParser{
             // msg
             byte[] msg = new byte[2+pubkeySize];
             System.arraycopy(data, 0, msg, 0, msg.length);
-            logger.info("SATOCHIPLIB: parseSatodimeGetPubkey authentikey: " + toHexString(msg));
             // sigsize
             if (dataRemain<2){
                 throw new RuntimeException("Exception in parseSatodimeGetPubkey: wrong data length");
@@ -523,12 +516,11 @@ public class SatochipParser{
             }
             byte[] sig= new byte[sigSize];
             System.arraycopy(data, offset, sig, 0, sigSize);
-            logger.info("SATOCHIPLIB: parseSatodimeGetPubkey authentikey: " + toHexString(sig));
             offset+=sigSize;
             dataRemain-=sigSize;
 
             // verify sig
-            logger.info("SATOCHIPLIB: parseSatodimeGetPubkey verifySig: START" );
+            logger.fine("SATOCHIPLIB: parseSatodimeGetPubkey verifySig: START" );
             boolean isOk= verifySig(msg, sig, authentikey);
             if (!isOk){
                 throw new RuntimeException("Exception in parseSatodimeGetPubkey: wrong signature!");
@@ -585,8 +577,7 @@ public class SatochipParser{
             }
 
             byte[] data= rapdu.getData();
-            //logger.info("SATOCHIPLIB: parseSatodimeGetPrivkey data: " + toHexString(data));
-            logger.info("SATOCHIPLIB: parseSatodimeGetPrivkey authentikey: " + toHexString(authentikey));
+            logger.fine("SATOCHIPLIB: parseSatodimeGetPrivkey authentikey: " + toHexString(authentikey));
             //data: [ entropy_size(2b) | user_entropy + authentikey_coordx + card_entropy | privkey_size(2b) | privkey | sig_size(2b) | sig ]
 
             int offset=0;
@@ -614,7 +605,7 @@ public class SatochipParser{
             System.arraycopy(data, 0, msg, 0, msg_size);
 
             // verification of signature
-            logger.info("SATOCHIPLIB: parseSatodimeGetPrivkey verifySig: START" );
+            logger.fine("SATOCHIPLIB: parseSatodimeGetPrivkey verifySig: START" );
             boolean isOk= verifySig(msg, sig, authentikey);
             if (!isOk){
                 throw new RuntimeException("Exception in parseSatodimeGetPrivkey: wrong signature!");
@@ -626,8 +617,6 @@ public class SatochipParser{
             digest.update(entropy, 0, entropy.length);
             digest.doFinal(hash, 0);
             if (!Arrays.equals(hash, privkey)){
-                //logger.warning("SATOCHIPLIB: parseSatodimeGetPrivkey: entropy_hash: " + toHexString(hash));
-                //logger.warning("SATOCHIPLIB: parseSatodimeGetPrivkey: privkey: " + toHexString(privkey));
                 throw new RuntimeException("Exception in parseSatodimeGetPrivkey: recovered private key for keyslot {key_nbr} does not match entropy hash!!");
             }
 
@@ -721,8 +710,6 @@ public class SatochipParser{
 
             // compare with known coordx
             if (Arrays.equals(coordx, coordx2)){
-                logger.info("SATOCHIPLIB: Found coordx: " + toHexString(coordx2));
-                logger.info("SATOCHIPLIB: Found pubkey: " + toHexString(pubkey));
                 return recid;
             }
         }
@@ -763,7 +750,7 @@ public class SatochipParser{
         // convert msg to hash
         MessageDigest md;
         try {
-            md = MessageDigest.getInstance("SHA256", "BC");
+            md = MessageDigest.getInstance("SHA256", BouncyCastle.PROVIDER);
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
@@ -794,8 +781,6 @@ public class SatochipParser{
 
             // compare with known coordx
             if (Arrays.equals(coordx, coordx2)){
-                logger.info("SATOCHIPLIB: Found coordx: " + toHexString(coordx2));
-                logger.info("SATOCHIPLIB: Found pubkey: " + toHexString(pubkey));
                 return pubkey;
             }
         }
@@ -829,7 +814,7 @@ public class SatochipParser{
         // convert msg to hash
         MessageDigest md;
         try {
-            md = MessageDigest.getInstance("SHA256", "BC");
+            md = MessageDigest.getInstance("SHA256", BouncyCastle.PROVIDER);
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
@@ -850,7 +835,7 @@ public class SatochipParser{
         for (int recid=0; recid<4; recid++){
             point= Recover(hash, sigBig, recid, false);
             if (point==null){
-                logger.warning("SATOCHIPLIB: null point for recid: " + recid);
+                logger.fine("SATOCHIPLIB: null point for recid: " + recid);
                 continue;
             }
 
@@ -859,7 +844,6 @@ public class SatochipParser{
 
             // add to list
             pubkeys.add(pubkey);
-            logger.warning("SATOCHIPLIB: Found potential pubkey: " + toHexString(pubkey));
         }
         return pubkeys;
     }
@@ -1130,15 +1114,14 @@ public class SatochipParser{
      * @see org.bouncycastle.crypto.signers.ECDSASigner
      */
     public boolean verifySig(byte[] msg, byte[] dersig, byte[] pub) {
-        logger.info("SATOCHIPLIB: In verifySig() ");
-        logger.info("SATOCHIPLIB: verifySig: authentikey: " + toHexString(pub));
+        logger.fine("SATOCHIPLIB: In verifySig() ");
+        logger.fine("SATOCHIPLIB: verifySig: authentikey: " + toHexString(pub));
 
         // compute hash of message
         SHA256Digest digest = new SHA256Digest();
         byte[] hash= new byte[digest.getDigestSize()];
         digest.update(msg, 0, msg.length);
         digest.doFinal(hash, 0);
-        logger.info("SATOCHIPLIB: verifySig: hash: " + toHexString(hash));
 
         // convert der-sig to bigInteger[]
         BigInteger[] rs= decodeFromDER(dersig);
@@ -1147,10 +1130,10 @@ public class SatochipParser{
         ECPublicKeyParameters params = new ECPublicKeyParameters(CURVE.getCurve().decodePoint(pub), CURVE);
         signer.init(false, params);
         try {
-            logger.info("SATOCHIPLIB: verifySig: hash: verifySignature: Start" );
+            logger.fine("SATOCHIPLIB: verifySig: hash: verifySignature: Start" );
             return signer.verifySignature(hash, rs[0], rs[1]);
         } catch (NullPointerException e) {
-            logger.warning("SATOCHIPLIB: Caught NPE inside bouncy castle"+ e);
+            logger.log(Level.WARNING, "SATOCHIPLIB: Caught NPE inside bouncy castle", e);
             return false;
         }
     }
@@ -1180,9 +1163,8 @@ public class SatochipParser{
      * @see #cardExportPersoCertificate()
      */
     public String convertBytesToStringPem(byte[] certBytes){
-        logger.info("SATOCHIPLIB: In convertBytesToStringPem");
+        logger.fine("SATOCHIPLIB: In convertBytesToStringPem");
         String certBase64Raw= Base64.getEncoder().encodeToString(certBytes);
-        logger.info("SATOCHIPLIB: certBase64Raw"+ certBase64Raw);
 
         // divide in fixed size chunk
         int chunkSize=64;
@@ -1192,7 +1174,6 @@ public class SatochipParser{
             certBase64+= "\r\n";
         }
         certBase64+= "-----END CERTIFICATE-----";
-        logger.info("SATOCHIPLIB: certBase64"+ certBase64);
         return certBase64;
     }
 
@@ -1225,7 +1206,6 @@ public class SatochipParser{
 
         try{
             byte[] data= rapdu.getData();
-            logger.info("SATOCHIPLIB: parseVerifyChallengeResponsePki data: " + toHexString(data));
 
             int offset=0;
             int dataRemain= data.length;
