@@ -356,6 +356,24 @@ public class SatochipCommandSet {
         this.secureChannel = secureChannel;
     }
 
+    /*
+     * Logging policy: the data field of a command or response may hold secrets (PIN, PUK, seed,
+     * private key, SeedKeeper secret, decrypted export) or personal data (card or secret labels),
+     * so APDUs are only ever logged through describe(), which prints the header, the lengths and the
+     * status word. Routine messages use FINE; WARNING is kept for real problems.
+     */
+
+    /** Describes a command for the logs: header and data length, never the data itself. */
+    private static String describe(APDUCommand apdu) {
+        return String.format("CLA:%02X INS:%02X P1:%02X P2:%02X Lc:%d",
+                apdu.getCla(), apdu.getIns(), apdu.getP1(), apdu.getP2(), apdu.getData().length);
+    }
+
+    /** Describes a response for the logs: status word and data length, never the data itself. */
+    private static String describe(APDUResponse rapdu) {
+        return String.format("SW:%04X Le:%d", rapdu.getSw(), rapdu.getData().length);
+    }
+
     /**
      * Transmits an APDU command to the card with automatic secure channel and PIN handling.
      *
@@ -394,7 +412,7 @@ public class SatochipCommandSet {
                     APDUCommand statusCapdu = new APDUCommand(0xB0, INS_GET_STATUS, 0x00, 0x00, new byte[0]);
                     APDUResponse statusRapdu = apduChannel.send(statusCapdu);
                     status = new ApplicationStatus(statusRapdu);
-                    logger.info("SATOCHIPLIB: Status cardGetStatus:" + status.toString());
+                    logger.fine("SATOCHIPLIB: Status cardGetStatus:" + status.toString());
                 }
 
                 APDUCommand capdu = null;
@@ -402,13 +420,11 @@ public class SatochipCommandSet {
 
                     if (!secureChannel.initializedSecureChannel()) {
                         cardInitiateSecureChannel();
-                        logger.info("SATOCHIPLIB: secure Channel initiated!");
+                        logger.fine("SATOCHIPLIB: secure Channel initiated!");
                     }
                     // encrypt apdu
-                    //logger.info("SATOCHIPLIB: Capdu before encryption:"+ plainApdu.toHexString());
                     capdu = secureChannel.encrypt_secure_channel(plainApdu);
                     isEncrypted = true;
-                    //logger.info("SATOCHIPLIB: Capdu encrypted:"+ capdu.toHexString());
                 } else {
                     // plain adpu
                     capdu = plainApdu;
@@ -421,9 +437,7 @@ public class SatochipCommandSet {
                 if (sw12 == 0x9000) { // ok!
                     if (isEncrypted) {
                         // decrypt
-                        //logger.info("SATOCHIPLIB: Rapdu encrypted:"+ rapdu.toHexString());
                         rapdu = secureChannel.decrypt_secure_channel(rapdu);
-                        //logger.info("SATOCHIPLIB: Rapdu decrypted:"+ rapdu.toHexString());
                     }
                     isApduTransmitted = true; // leave loop
                     return rapdu;
@@ -535,13 +549,13 @@ public class SatochipCommandSet {
             selectApplet = new APDUCommand(0x00, 0xA4, 0x04, 0x00, SATOCASH_AID);
         }
 
-        logger.info("SATOCHIPLIB: C-APDU cardSelect:" + selectApplet.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardSelect: " + describe(selectApplet));
         APDUResponse respApdu = apduChannel.send(selectApplet);
-        logger.info("SATOCHIPLIB: R-APDU cardSelect:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardSelect: " + describe(respApdu));
 
         if (respApdu.getSw() == 0x9000) {
             this.cardType = cardType;
-            logger.info("SATOCHIPLIB: Satochip-java: CardSelect: found a " + this.cardType);
+            logger.fine("SATOCHIPLIB: CardSelect: found a " + this.cardType);
         }
         return respApdu;
     }
@@ -569,12 +583,12 @@ public class SatochipCommandSet {
     public APDUResponse cardGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_STATUS, 0x00, 0x00, new byte[0]);
 
-        logger.info("SATOCHIPLIB: C-APDU cardGetStatus:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardGetStatus: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardGetStatus:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardGetStatus: " + describe(respApdu));
 
         status = new ApplicationStatus(respApdu);
-        logger.info("SATOCHIPLIB: Status from cardGetStatus:" + status.toString());
+        logger.fine("SATOCHIPLIB: Status from cardGetStatus:" + status.toString());
 
         return respApdu;
     }
@@ -605,9 +619,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_INIT_SECURE_CHANNEL, 0x00, 0x00, pubkey);
 
-        logger.info("SATOCHIPLIB: C-APDU cardInitiateSecureChannel:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardInitiateSecureChannel: " + describe(plainApdu));
         APDUResponse respApdu = apduChannel.send(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardInitiateSecureChannel:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardInitiateSecureChannel: " + describe(respApdu));
 
         byte[] keyData = parser.parseInitiateSecureChannel(respApdu);
         possibleAuthentikeys = parser.parseInitiateSecureChannelGetPossibleAuthentikeys(respApdu);
@@ -638,14 +652,14 @@ public class SatochipCommandSet {
     public byte[] cardGetAuthentikey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_AUTHENTIKEY, 0x00, 0x00, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU cardExportAuthentikey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardExportAuthentikey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardExportAuthentikey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardExportAuthentikey: " + describe(respApdu));
 
         // parse and recover pubkey
         authentikey = parser.parseBip32GetAuthentikey(respApdu);
         authentikeyHex = parser.toHexString(authentikey);
-        logger.info("SATOCHIPLIB: Authentikey from cardExportAuthentikey:" + authentikeyHex);
+        logger.fine("SATOCHIPLIB: Authentikey from cardExportAuthentikey:" + authentikeyHex);
 
         return authentikey;
     }
@@ -665,14 +679,14 @@ public class SatochipCommandSet {
     public APDUResponse cardBip32GetAuthentikey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_GET_AUTHENTIKEY, 0x00, 0x00, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU cardBip32GetAuthentikey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardBip32GetAuthentikey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardBip32GetAuthentikey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardBip32GetAuthentikey: " + describe(respApdu));
 
         // parse and recover pubkey
         authentikey = parser.parseBip32GetAuthentikey(respApdu);
         authentikeyHex = parser.toHexString(authentikey);
-        logger.info("SATOCHIPLIB: Authentikey from cardBip32GetAuthentikey:" + authentikeyHex);
+        logger.fine("SATOCHIPLIB: Authentikey from cardBip32GetAuthentikey:" + authentikeyHex);
 
         return respApdu;
     }
@@ -691,14 +705,14 @@ public class SatochipCommandSet {
     public APDUResponse cardExportPkiPubkey() {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_PUBKEY, 0x00, 0x00, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU cardExportPkiPubkey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardExportPkiPubkey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardExportPkiPubkey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardExportPkiPubkey: " + describe(respApdu));
 
         // parse and recover pubkey
         authentikey = parser.parseExportPkiPubkey(respApdu);
         authentikeyHex = parser.toHexString(authentikey);
-        logger.info("SATOCHIPLIB: Authentikey from cardExportPkiPubkey:" + authentikeyHex);
+        logger.fine("SATOCHIPLIB: Authentikey from cardExportPkiPubkey:" + authentikeyHex);
 
         return respApdu;
     }
@@ -729,12 +743,12 @@ public class SatochipCommandSet {
      * @see #setCardLabel(String)
      */
     public String getCardLabel() {
-        logger.info("SATOCHIPLIB: getCardLabel START");
+        logger.fine("SATOCHIPLIB: getCardLabel");
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x01, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU getCardLabel:"+ plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU getCardLabel: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU getCardLabel:"+ respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU getCardLabel: " + describe(respApdu));
         int sw = respApdu.getSw();
         String label;
         if (sw == 0x9000){
@@ -746,10 +760,10 @@ public class SatochipCommandSet {
                 label = new String(respApdu.getData(), 1, respApdu.getData().length - 1, StandardCharsets.UTF_8);
             }
         } else if (sw == 0x6D00) {
-            logger.info("SATOCHIPLIB: getCardLabel  label not set:" + sw);
+            logger.fine("SATOCHIPLIB: getCardLabel: label not set");
             label = "(none)";
         } else {
-            logger.warning("SATOCHIPLIB: getCardLabel Error while recovering card label:" + sw);
+            logger.warning("SATOCHIPLIB: getCardLabel: error while recovering card label, SW: " + String.format("%04X", sw));
             label = "(unknown)";
         }
         return label;
@@ -782,7 +796,7 @@ public class SatochipCommandSet {
      * @see #getCardLabel()
      */
     public Boolean setCardLabel(String label) {
-        logger.info("SATOCHIPLIB: setCardLabel START");
+        logger.fine("SATOCHIPLIB: setCardLabel");
 
         byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
         byte[] data = new byte[1 + labelData.length];
@@ -790,10 +804,13 @@ public class SatochipCommandSet {
         System.arraycopy(labelData, 0, data, 1, labelData.length);
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_CARD_LABEL, 0x00, 0x00, data);
-        logger.info("SATOCHIPLIB: C-APDU setCardLabel:"+ plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU setCardLabel: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU setCardLabel:"+ respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU setCardLabel: " + describe(respApdu));
         int sw = respApdu.getSw();
+        if (sw == 0x9000) {
+            logger.fine("SATOCHIPLIB: setCardLabel: card label changed");
+        }
         return sw == 0x9000;
     }
     
@@ -921,10 +938,9 @@ public class SatochipCommandSet {
         data[offset++] = (byte) 0x01;
 
         APDUCommand plainApdu = new APDUCommand(cla, ins, p1, p2, data);
-        //logger.info("SATOCHIPLIB: C-APDU cardSetup:" + plainApdu.toHexString());
-        logger.info("SATOCHIPLIB: C-APDU cardSetup");
+        logger.fine("SATOCHIPLIB: C-APDU cardSetup: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardSetup:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardSetup: " + describe(respApdu));
 
         if (respApdu.isOK()) {
             setPin0(pin0);
@@ -977,9 +993,9 @@ public class SatochipCommandSet {
         );
 
         // reset command must be sent in clear, without other commands interferring between reset commands
-        logger.warning("SATOCHIPLIB: C-APDU cardSendResetCommand:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardSendResetCommand: " + describe(plainApdu));
         APDUResponse respApdu = apduChannel.send(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU cardSendResetCommand:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardSendResetCommand: " + describe(respApdu));
 
         return respApdu;
     }
@@ -1013,7 +1029,7 @@ public class SatochipCommandSet {
      * @throws Exception if the communication with the card fails
      */
     public APDUResponse cardResetFactoryV3() throws Exception {
-        logger.info("SATOCHIPLIB: cardResetFactoryV3");
+        logger.fine("SATOCHIPLIB: cardResetFactoryV3");
 
         cardGetStatus();
         if (!status.isSetupDone()) {
@@ -1036,13 +1052,13 @@ public class SatochipCommandSet {
                 FACTORY_RESET_V3_P2_MAGIC,
                 new byte[0]
         );
-        logger.warning("SATOCHIPLIB: C-APDU cardResetFactoryV3:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardResetFactoryV3: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU cardResetFactoryV3:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardResetFactoryV3: " + describe(respApdu));
 
         int sw = respApdu.getSw();
         if (sw == 0x9000) {
-            logger.warning("SATOCHIPLIB: CARD HAS BEEN RESET TO FACTORY!");
+            logger.info("SATOCHIPLIB: card has been reset to factory");
             // the card closed its secure channel and is back to its fresh-install state,
             // without PIN: the cached PIN and status are stale
             secureChannel.resetSecureChannel();
@@ -1118,10 +1134,9 @@ public class SatochipCommandSet {
 
         try {
             APDUCommand plainApdu = new APDUCommand(0xB0, INS_VERIFY_PIN, 0x00, 0x00, mypin);
-            //logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN:" + plainApdu.toHexString());
-            logger.info("SATOCHIPLIB: C-APDU cardVerifyPIN");
+            logger.fine("SATOCHIPLIB: C-APDU cardVerifyPIN: " + describe(plainApdu));
             APDUResponse rapdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU cardVerifyPIN:" + rapdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU cardVerifyPIN: " + describe(rapdu));
 
             rapdu.checkAuthOK();
             this.pin0 = mypin; // cache new pin
@@ -1181,7 +1196,7 @@ public class SatochipCommandSet {
      * @see #setPin0(byte[])
      */
     public APDUResponse cardChangePin(byte[] oldPin, byte[] newPin) throws Exception {
-        logger.info("SATOCHIPLIB: changeCardPin START");
+        logger.fine("SATOCHIPLIB: changeCardPin");
 
         byte[] data = new byte[1 + oldPin.length + 1 + newPin.length];
         data[0] = (byte) oldPin.length;
@@ -1191,10 +1206,9 @@ public class SatochipCommandSet {
         setPin0(newPin);
         try{
             APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHANGE_PIN, 0x00, 0x00, data);
-            //logger.info("SATOCHIPLIB: C-APDU changeCardPin:"+ plainApdu.toHexString());
-            logger.info("SATOCHIPLIB: C-APDU changeCardPin");
+            logger.fine("SATOCHIPLIB: C-APDU changeCardPin: " + describe(plainApdu));
             APDUResponse rapdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU changeCardPin:"+ rapdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU changeCardPin: " + describe(rapdu));
 
             rapdu.checkAuthOK();
             return rapdu;
@@ -1315,10 +1329,10 @@ public class SatochipCommandSet {
         );
 
         try{
-            logger.info("SATOCHIPLIB: C-APDU cardUnblockPin (format: "
+            logger.fine("SATOCHIPLIB: C-APDU cardUnblockPin (format: "
                     + (sizePrefixed ? "v0.16 size-prefixed" : "legacy") + ")");
             APDUResponse rapdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU cardUnblockPin:" + rapdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU cardUnblockPin: " + describe(rapdu));
 
             rapdu.checkAuthOK();
             return rapdu;
@@ -1394,10 +1408,9 @@ public class SatochipCommandSet {
         //TODO: check seed (length...)
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_IMPORT_SEED, masterseed.length, 0x00, masterseed);
 
-        //logger.info("SATOCHIPLIB: C-APDU cardBip32ImportSeed:" + plainApdu.toHexString());
-        logger.info("SATOCHIPLIB: C-APDU cardBip32ImportSeed");
+        logger.fine("SATOCHIPLIB: C-APDU cardBip32ImportSeed: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardBip32ImportSeed:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardBip32ImportSeed: " + describe(respApdu));
 
         return respApdu;
     }
@@ -1436,9 +1449,9 @@ public class SatochipCommandSet {
         }
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_BIP32_RESET_SEED, p1, 0x00, data);
-        logger.info("SATOCHIPLIB: C-APDU cardResetSeed:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardResetSeed: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardResetSeed:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardResetSeed: " + describe(respApdu));
         // TODO: check SW code for particular status
 
         return respApdu;
@@ -1495,7 +1508,7 @@ public class SatochipCommandSet {
      * @see #cardBip32GetXpub(String, long, Integer)
      */
     public byte[][] cardBip32GetExtendedKey(String stringPath, Byte flags, Integer sid) throws Exception {
-        logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey");
+        logger.fine("SATOCHIPLIB: cardBip32GetExtendedKey");
         Bip32Path parsedPath = new Bip32Path(stringPath);
         if (parsedPath.getDepth() > 10) {
             throw new Exception("Path length exceeds maximum depth of 10: " + parsedPath.getDepth());
@@ -1524,11 +1537,11 @@ public class SatochipCommandSet {
                     p2,
                     data
             );
-            logger.warning("SATOCHIPLIB: C-APDU cardBip32GetExtendedKey:" + plainApdu.toHexString());
+            logger.fine("SATOCHIPLIB: C-APDU cardBip32GetExtendedKey: " + describe(plainApdu));
             APDUResponse respApdu = this.cardTransmit(plainApdu);
-            logger.warning("SATOCHIPLIB: R-APDU cardBip32GetExtendedKey:" + respApdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU cardBip32GetExtendedKey: " + describe(respApdu));
             if (respApdu.getSw() == 0x9C01) {
-                logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey: Reset memory...");
+                logger.fine("SATOCHIPLIB: cardBip32GetExtendedKey: Reset memory...");
                 // reset memory flag
                 p2 = (byte) (p2 ^ 0x80);
                 plainApdu = new APDUCommand(
@@ -1547,22 +1560,21 @@ public class SatochipCommandSet {
             if (respApdu.getSw() != 0x9000) {
                 throw new Exception("SATOCHIPLIB: cardBip32GetExtendedKey:" +
                         "Unexpected error during BIP32 derivation. SW: " +
-                        respApdu.getSw() + " " + respApdu.toHexString()
+                        String.format("%04X", respApdu.getSw())
                 );
             }
             // success
             if (respApdu.getSw() == 0x9000) {
-                logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey: return 0x9000...");
                 byte[] response = respApdu.getData();
                 if ((optionFlags & 0x04) == 0x04) { // BIP85
                     //todo: enable?
-                    logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey: in BIP85");
+                    logger.fine("SATOCHIPLIB: cardBip32GetExtendedKey: BIP85 derivation");
                     extendedKey = parser.parseBip85GetExtendedKey(respApdu)[0];
                     extendedKeyHex = parser.toHexString(extendedKey);
                 } else if ((optionFlags & 0x02) == 0x00) { // BIP32 pubkey
-                    logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey: in BIP39");
+                    logger.fine("SATOCHIPLIB: cardBip32GetExtendedKey: BIP32 derivation");
                     if ((response[32] & 0x80) == 0x80) {
-                        logger.info("SATOCHIPLIB: cardBip32GetExtendedKey: Child Derivation optimization...");
+                        logger.warning("SATOCHIPLIB: cardBip32GetExtendedKey: unsupported legacy child derivation optimization");
                         throw new Exception("Unsupported legacy option during BIP32 derivation");
                     }
                     byte[][] extendedKeyData = parser.parseBip32GetExtendedKey(respApdu);
@@ -1624,15 +1636,13 @@ public class SatochipCommandSet {
      * @see #cardBip32GetExtendedKey(String, Byte, Integer)
      */
     public String cardBip32GetXpub(String path, long xtype, Integer sid) throws Exception {
-        logger.warning("SATOCHIPLIB: cardBip32GetXpub");
+        logger.fine("SATOCHIPLIB: cardBip32GetXpub");
 
         byte[] childPubkey, childChaincode;
         byte optionFlags = (byte) 0x40;
 
         // Get extended key
-        logger.warning("SATOCHIPLIB: cardBip32GetXpub: getting card cardBip32GetExtendedKey");
         cardBip32GetExtendedKey(path, optionFlags, sid);
-        logger.warning("SATOCHIPLIB: cardBip32GetXpub: got it "+ extendedKey.length);
 
         childPubkey = extendedKey;
         childChaincode = extendedChaincode;
@@ -1651,7 +1661,6 @@ public class SatochipCommandSet {
         if (depth > 0) {
             // Get parent info
             String parentPath = Bip32Path.getBip32PathParentPath(path);
-            logger.warning("SATOCHIPLIB: cardBip32GetXpub: parentPathString: "+ parentPath);
 
             cardBip32GetExtendedKey(parentPath, optionFlags, sid);
             byte[] parentPubkeyBytes = extendedKey;
@@ -1680,7 +1689,7 @@ public class SatochipCommandSet {
 
         String xpub = encodeChecked(xpubBytes);
 //        String xpub = Base58.encodeChecked(0, xpubBytes);
-        logger.warning("SATOCHIPLIB: cardBip32GetXpub: xpub: " + xpub);
+        logger.fine("SATOCHIPLIB: cardBip32GetXpub: xpub computed at depth " + depth);
         return xpub;
     }
 
@@ -1787,9 +1796,9 @@ public class SatochipCommandSet {
         }
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_TRANSACTION_HASH, keynbr, 0x00, data);
 
-        logger.info("SATOCHIPLIB: C-APDU cardSignTransactionHash:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardSignTransactionHash: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardSignTransactionHash:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardSignTransactionHash: " + describe(respApdu));
         // TODO: check SW code for particular status
 
         return respApdu;
@@ -1839,9 +1848,9 @@ public class SatochipCommandSet {
         int p2 = bypass_flag? 0x01 : 0x00;
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_TAPROOT_TWEAK_PRIVKEY, p1, p2, data);
-        logger.info("SATOCHIPLIB: C-APDU TaprootTweakPrivateKey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU TaprootTweakPrivateKey: " + describe(plainApdu));
         APDUResponse rapdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU TaprootTweakPrivateKey:" + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU TaprootTweakPrivateKey: " + describe(rapdu));
         // check response for error
         rapdu.checkOK();
 
@@ -1900,9 +1909,9 @@ public class SatochipCommandSet {
         }
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_SIGN_SCHNORR_HASH, 0x00, 0x00, data);
 
-        logger.info("SATOCHIPLIB: C-APDU cardSignSchnorrHash:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardSignSchnorrHash: " + describe(plainApdu));
         APDUResponse rapdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardSignSchnorrHash:" + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardSignSchnorrHash: " + describe(rapdu));
         // check response for error
         rapdu.checkOK();
 
@@ -1980,9 +1989,9 @@ public class SatochipCommandSet {
         int p2 = 0x01; // OP_INIT
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_MUSIG2_GENERATE_NONCE, p1, p2, data);
-        logger.info("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_INIT):" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_INIT): " + describe(plainApdu));
         APDUResponse rapdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_INIT):" + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_INIT): " + describe(rapdu));
         // check response for error
         rapdu.checkOK();
 
@@ -1992,9 +2001,9 @@ public class SatochipCommandSet {
         // OP_FINALIZE: recover encrypted_secnonce
         p2 = 0x03; // OP_FINALIZE
         plainApdu = new APDUCommand(0xB0, INS_MUSIG2_GENERATE_NONCE, p1, p2, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_FINALIZE):" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU Musig2GenerateNonce (OP_FINALIZE): " + describe(plainApdu));
         rapdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_FINALIZE):" + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU Musig2GenerateNonce (OP_FINALIZE): " + describe(rapdu));
         // check response for error
         rapdu.checkOK();
 
@@ -2061,9 +2070,9 @@ public class SatochipCommandSet {
         int p2 = 0x01; // OP_INIT
 
         APDUCommand plainApdu = new APDUCommand(0xB0, ins, p1, p2, data);
-        logger.info("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_INIT):" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_INIT): " + describe(plainApdu));
         APDUResponse rapdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_INIT):" + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_INIT): " + describe(rapdu));
         // check response for error
         rapdu.checkOK();
 
@@ -2081,9 +2090,9 @@ public class SatochipCommandSet {
 
         p2 = 0x03; // OP_FINALIZE
         plainApdu = new APDUCommand(0xB0, ins, p1, p2, data);
-        logger.info("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_FINALIZE):" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardMusig2SignHash (OP_FINALIZE): " + describe(plainApdu));
         rapdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_FINALIZE):" + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardMusig2SignHash (OP_FINALIZE): " + describe(rapdu));
         // check response for error
         rapdu.checkOK();
 
@@ -2124,9 +2133,9 @@ public class SatochipCommandSet {
     public APDUResponse satodimeGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SATODIME_STATUS, 0x00, 0x00, new byte[0]);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeGetStatus:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeGetStatus: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeGetStatus:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeGetStatus: " + describe(respApdu));
 
         satodimeStatus.updateStatus(respApdu);
         //satodimeStatus= new SatodimeStatus(respApdu);
@@ -2157,9 +2166,9 @@ public class SatochipCommandSet {
 
         byte keyslot = (byte) (keyNbr % 256);
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SATODIME_KEYSLOT_STATUS, keyslot, 0x00, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU satodimeGetKeyslotStatus:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeGetKeyslotStatus: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeGetKeyslotStatus:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeGetKeyslotStatus: " + describe(respApdu));
 
         return respApdu;
     }
@@ -2224,9 +2233,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_SET_SATODIME_KEYSLOT_STATUS, keyslot, 0x00, data);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeSetKeyslotStatusPart0:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeSetKeyslotStatusPart0: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeSetKeyslotStatusPart0:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeSetKeyslotStatusPart0: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2274,9 +2283,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_SET_SATODIME_KEYSLOT_STATUS, keyslot, 0x01, data);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeSetKeyslotStatusPart1:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeSetKeyslotStatusPart1: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeSetKeyslotStatusPart1:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeSetKeyslotStatusPart1: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2302,9 +2311,9 @@ public class SatochipCommandSet {
         byte keyslot = (byte) (keyNbr % 256);
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SATODIME_PUBKEY, keyslot, 0x00, new byte[0]);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeGetPubkey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeGetPubkey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeGetPubkey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeGetPubkey: " + describe(respApdu));
 
         return respApdu;
     }
@@ -2347,9 +2356,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SATODIME_PRIVKEY, keyslot, 0x00, unlockCode);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeGetPrivkey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeGetPrivkey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeGetPrivkey:" + respApdu.getSw());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeGetPrivkey: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2399,9 +2408,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_SEAL_SATODIME_KEY, keyslot, 0x00, data);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeSealKey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeSealKey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeSealKey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeSealKey: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2441,9 +2450,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_UNSEAL_SATODIME_KEY, keyslot, 0x00, unlockCode);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeUnsealKey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeUnsealKey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeUnsealKey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeUnsealKey: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2486,9 +2495,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_RESET_SATODIME_KEY, keyslot, 0x00, unlockCode);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeResetKey:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeResetKey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeResetKey:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeResetKey: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2531,9 +2540,9 @@ public class SatochipCommandSet {
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_INITIATE_SATODIME_TRANSFER, 0x00, 0x00, unlockCode);
 
-        logger.info("SATOCHIPLIB: C-APDU satodimeInitiateOwnershipTransfer:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU satodimeInitiateOwnershipTransfer: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU satodimeInitiateOwnershipTransfer:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satodimeInitiateOwnershipTransfer: " + describe(respApdu));
         if (respApdu.isOK()) {
             satodimeStatus.incrementUnlockCounter();
         }
@@ -2565,9 +2574,9 @@ public class SatochipCommandSet {
     public SeedkeeperStatus seedkeeperGetStatus() {
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_GET_SEEDKEEPER_STATUS, 0x00, 0x00, new byte[0]);
 
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperGetStatus:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperGetStatus: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperGetStatus:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperGetStatus: " + describe(respApdu));
         SeedkeeperStatus seedkeeperStatus = new SeedkeeperStatus();
         seedkeeperStatus.updateStatus(respApdu);
 
@@ -2607,9 +2616,9 @@ public class SatochipCommandSet {
                 exportRights.ordinal(),
                 data
         );
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperGenerateMasterseed:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperGenerateMasterseed: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperGenerateMasterseed:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperGenerateMasterseed: " + describe(respApdu));
 
         respApdu.checkOK();
         byte[] response = respApdu.getData();
@@ -2703,9 +2712,9 @@ public class SatochipCommandSet {
                 data
         );
 
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperGenerateRandomSecret:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperGenerateRandomSecret: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperGenerateRandomSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperGenerateRandomSecret: " + describe(respApdu));
 
         respApdu.checkOK();
         byte[] response = respApdu.getData();
@@ -2782,7 +2791,7 @@ public class SatochipCommandSet {
     public SeedkeeperSecretHeader seedkeeperImportSecret(
             SeedkeeperSecretObject secretObject
     ) throws Exception {
-        logger.info("SATOCHIPLIB: seedkeeperImportSecret");
+        logger.fine("SATOCHIPLIB: seedkeeperImportSecret");
         SeedkeeperSecretHeader secretHeader = secretObject.getSecretHeader();
         Integer sidPubKey = (secretObject.getSecretEncryptedParams() != null) ? secretObject.getSecretEncryptedParams().getSidPubkey() : null;
         boolean isSecureExport = sidPubKey != null;
@@ -2827,9 +2836,9 @@ public class SatochipCommandSet {
                 data
         );
 
-        logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret before loop:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperImportSecret before loop: " + describe(plainApdu));
         APDUResponse respApdu = cardTransmit(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU seedkeeperImportSecret before loop:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperImportSecret before loop: " + describe(respApdu));
 
         respApdu.checkOK();
         // repeat process
@@ -2850,10 +2859,9 @@ public class SatochipCommandSet {
                     chunk
             );
 
-            //logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret:" + plainApdu.toHexString());
-            logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret");
+            logger.fine("SATOCHIPLIB: C-APDU seedkeeperImportSecret: " + describe(plainApdu));
             respApdu = this.cardTransmit(plainApdu);
-            logger.warning("SATOCHIPLIB: R-APDU seedkeeperImportSecret:" + respApdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU seedkeeperImportSecret: " + describe(respApdu));
             respApdu.checkOK();
             secretOffset += chunkSize;
             secretRemaining -= chunkSize;
@@ -2880,10 +2888,9 @@ public class SatochipCommandSet {
                 chunk
         );
 
-        //logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret:" + plainApdu.toHexString());
-        logger.warning("SATOCHIPLIB: C-APDU seedkeeperImportSecret");
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperImportSecret: " + describe(plainApdu));
         respApdu = this.cardTransmit(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU seedkeeperImportSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperImportSecret: " + describe(respApdu));
         respApdu.checkOK();
 
         secretOffset += secretRemaining;
@@ -2902,7 +2909,7 @@ public class SatochipCommandSet {
         byte[] fingerprintFromSecret = secretObject.getFingerprintFromSecret();
 
         if(Arrays.equals(fingerprintFromSecret, fingerprintFromSeedkeeper)) {
-            logger.warning("SATOCHIPLIB: seedkeeperImportSecret: Fingerprints match!");
+            logger.fine("SATOCHIPLIB: seedkeeperImportSecret: secret #" + sid + " imported, fingerprints match");
         } else {
             logger.warning("SATOCHIPLIB: seedkeeperImportSecret: Fingerprints mismatch:" +
                     " expected" + Arrays.toString(fingerprintFromSecret) +
@@ -2946,7 +2953,7 @@ public class SatochipCommandSet {
             int sid,
             Integer sidPubKey
     ) throws Exception {
-        logger.info("SATOCHIPLIB: seedkeeperExportSecret");
+        logger.fine("SATOCHIPLIB: seedkeeperExportSecret");
         boolean isSecureExport = sidPubKey != null;
         List<Byte> dataArray = new ArrayList<>();
         dataArray.add((byte) (sid >> 8));
@@ -2970,9 +2977,9 @@ public class SatochipCommandSet {
                 data
         );
 
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperExportSecret:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperExportSecret: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperExportSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperExportSecret: " + describe(respApdu));
 
         respApdu.checkOK();
 
@@ -2997,10 +3004,9 @@ public class SatochipCommandSet {
                     (byte) 0x02,
                     new byte[0]
             );
-            //logger.info("SATOCHIPLIB: C-APDU seedkeeperExportSecret:" + plainApdu.toHexString());
-            logger.info("SATOCHIPLIB: C-APDU seedkeeperExportSecret:" + plainApdu.toHexString());
+            logger.fine("SATOCHIPLIB: C-APDU seedkeeperExportSecret: " + describe(plainApdu));
             respApdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU seedkeeperExportSecret");
+            logger.fine("SATOCHIPLIB: R-APDU seedkeeperExportSecret: " + describe(respApdu));
             respApdu.checkOK();
 
 
@@ -3041,9 +3047,9 @@ public class SatochipCommandSet {
             byte[] fingerprintFromSecret = secretObject.getFingerprintFromSecret();
 
             if (Arrays.equals(fingerprintFromSecret, fingerprintFromSeedkeeper)) {
-                System.out.println("SATOCHIPLIB seedkeeperExportSecret: Fingerprints match!");
+                logger.fine("SATOCHIPLIB: seedkeeperExportSecret: fingerprints match");
             } else {
-                System.out.println("SATOCHIPLIB seedkeeperExportSecret: Fingerprint mismatch: expected " +
+                logger.warning("SATOCHIPLIB: seedkeeperExportSecret: fingerprint mismatch: expected " +
                         Arrays.toString(fingerprintFromSecret) + " but recovered " +
                         Arrays.toString(fingerprintFromSeedkeeper));
             }
@@ -3080,7 +3086,7 @@ public class SatochipCommandSet {
             int sid,
             Integer sidPubKey
     ) throws Exception {
-        logger.info("SATOCHIPLIB: seedkeeperExportSecretToSatochip");
+        logger.fine("SATOCHIPLIB: seedkeeperExportSecretToSatochip");
         byte[] data = new byte[] {
                 (byte) (sid >> 8), (byte) (sid % 256),
                 (byte) (sidPubKey >> 8), (byte) (sidPubKey % 256)
@@ -3094,9 +3100,9 @@ public class SatochipCommandSet {
                 data
         );
 
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperExportSecret:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperExportSecret: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperExportSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperExportSecret: " + describe(respApdu));
 
         respApdu.checkOK();
 
@@ -3122,7 +3128,6 @@ public class SatochipCommandSet {
 
         // secretObject
         SeedkeeperSecretEncryptedParams secretParams = new SeedkeeperSecretEncryptedParams(sidPubKey, iv, hmacBytes);
-        logger.info("SATOCHIPLIB: seedkeeperExportSecret secretParams:" + secretParams);
 
 
         return new SeedkeeperSecretObject(secretBytes, secretHeader, true, secretParams);
@@ -3154,7 +3159,7 @@ public class SatochipCommandSet {
      * @see #seedkeeperListSecretHeaders()
      */
     public APDUResponse seedkeeperResetSecret(int sid) throws APDUException {
-        logger.info("SATOCHIPLIB: seedkeeperResetSecret");
+        logger.fine("SATOCHIPLIB: seedkeeperResetSecret");
 
         byte[] data = new byte[]{
                 (byte) (sid >> 8), (byte) (sid % 256)
@@ -3166,9 +3171,9 @@ public class SatochipCommandSet {
                 (byte) 0x00,
                 data
         );
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperResetSecret:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperResetSecret: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperResetSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperResetSecret: " + describe(respApdu));
 
         respApdu.checkOK();
 
@@ -3202,7 +3207,7 @@ public class SatochipCommandSet {
      * @see #seedkeeperGetStatus()
      */
     public List<SeedkeeperSecretHeader> seedkeeperListSecretHeaders() throws Exception {
-        logger.info("SATOCHIPLIB: seedkeeperListSecretHeaders");
+        logger.fine("SATOCHIPLIB: seedkeeperListSecretHeaders");
 
         List<SeedkeeperSecretHeader> secretHeaders = new ArrayList<>();
         byte[] data = new byte[]{};
@@ -3213,9 +3218,9 @@ public class SatochipCommandSet {
                 (byte) 0x01,
                 data
         );
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperResetSecret:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperListSecretHeaders: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperResetSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperListSecretHeaders: " + describe(respApdu));
 
         // return early for empty cards
         if (respApdu.getSw1() == 0x9C && respApdu.getSw2() == 0x12){
@@ -3235,9 +3240,9 @@ public class SatochipCommandSet {
                     (byte) 0x02,
                     data
             );
-            logger.info("SATOCHIPLIB: C-APDU seedkeeperResetSecret:" + plainApdu.toHexString());
+            logger.fine("SATOCHIPLIB: C-APDU seedkeeperListSecretHeaders: " + describe(plainApdu));
             respApdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU seedkeeperResetSecret:" + respApdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU seedkeeperListSecretHeaders: " + describe(respApdu));
 
         }
 
@@ -3278,9 +3283,9 @@ public class SatochipCommandSet {
                 (byte) 0x01,
                 data
         );
-        logger.info("SATOCHIPLIB: C-APDU seedkeeperResetSecret:" + plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU seedkeeperPrintLogs: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU seedkeeperResetSecret:" + respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU seedkeeperPrintLogs: " + describe(respApdu));
 
         respApdu.checkOK();
         byte[] response = respApdu.getData();
@@ -3292,20 +3297,20 @@ public class SatochipCommandSet {
         if (respApdu.getSw1() == 0x90 && respApdu.getSw2() == 0x00) {
             nbTotalLogs = (response[0] & 0xFF) * 256 + (response[1] & 0xFF);
             nbAvailLogs = (response[2] & 0xFF) * 256 + (response[3] & 0xFF);
-            System.out.println("[SatocardCommandSet.seedkeeperPrintLogs] nbTotalLogs: " + nbTotalLogs);
-            System.out.println("[SatocardCommandSet.seedkeeperPrintLogs] nbAvailLogs: " + nbAvailLogs);
+            logger.fine("SATOCHIPLIB: seedkeeperPrintLogs: nbTotalLogs: " + nbTotalLogs);
+            logger.fine("SATOCHIPLIB: seedkeeperPrintLogs: nbAvailLogs: " + nbAvailLogs);
             if (response.length >= 4 + SeedkeeperLog.LOG_SIZE) {
                 log = new SeedkeeperLog(Arrays.copyOfRange(response, 4, 4 + SeedkeeperLog.LOG_SIZE));
                 logs.add(log);
-                System.out.println("[SatocardCommandSet.seedkeeperPrintLogs] latest log: " + log);
+                logger.fine("SATOCHIPLIB: seedkeeperPrintLogs: latest log: " + log);
             } else {
-                System.out.println("No logs available!");
+                logger.fine("SATOCHIPLIB: seedkeeperPrintLogs: no logs available");
             }
         } else if (respApdu.getSw1() == 0x9C && respApdu.getSw2() == 0x04) {
-            logger.warning("[SatocardCommandSet.seedkeeperPrintLogs] no logs: Seedkeeper is" +
+            logger.warning("SATOCHIPLIB: seedkeeperPrintLogs: no logs: Seedkeeper is" +
                     " not initialized!");
         } else {
-            logger.warning("[SatocardCommandSet.seedkeeperPrintLogs] unexpected error during" +
+            logger.warning("SATOCHIPLIB: seedkeeperPrintLogs: unexpected error during" +
                     " object listing (code " + respApdu.getSw() + ")");
         }
 
@@ -3319,12 +3324,12 @@ public class SatochipCommandSet {
                     (byte) 0x02,
                     data
             );
-            logger.info("SATOCHIPLIB: C-APDU seedkeeperResetSecret:" + plainApdu.toHexString());
+            logger.fine("SATOCHIPLIB: C-APDU seedkeeperPrintLogs: " + describe(plainApdu));
             respApdu = this.cardTransmit(plainApdu);
-            logger.info("SATOCHIPLIB: R-APDU seedkeeperResetSecret:" + respApdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU seedkeeperPrintLogs: " + describe(respApdu));
             response = respApdu.getData();
             if (respApdu.getSw1() != 0x90 || respApdu.getSw2() != 0x00) {
-                logger.warning("[SatocardCommandSet.seedkeeperPrintLogs] Error during log printing: (code " + respApdu.getSw() + ")");
+                logger.warning("SATOCHIPLIB: seedkeeperPrintLogs: Error during log printing: (code " + respApdu.getSw() + ")");
                 break;
             }
             if (response.length == 0) {
@@ -3338,7 +3343,7 @@ public class SatochipCommandSet {
 
                 counter += 1;
                 if (counter > 100) { // safe break; should never happen
-                    logger.warning("[SatocardCommandSet.seedkeeperPrintLogs] Counter exceeded during log printing: " + counter);
+                    logger.warning("SATOCHIPLIB: seedkeeperPrintLogs: Counter exceeded during log printing: " + counter);
                     break;
                 }
             }
@@ -3379,11 +3384,11 @@ public class SatochipCommandSet {
      * @see SatocashStatus
      */
     public SatocashStatus satocashGetStatus(boolean sendEncrypted) throws Exception {
-        logger.info("SATOCHIPLIB: satocashGetStatus");
+        logger.fine("SATOCHIPLIB: satocashGetStatus");
 
         APDUCommand capdu = new APDUCommand((byte) 0xB0, Constants.satocashGetStatus, (byte) 0x00, (byte) 0x00, new byte[0]);
         APDUResponse rapdu = this.cardTransmit(capdu);
-        logger.info("SATOCHIPLIB: R-APDU satocashGetStatus: " + rapdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU satocashGetStatus: " + describe(rapdu));
         rapdu.checkOK();
 
         return new SatocashStatus(rapdu);
@@ -3401,7 +3406,7 @@ public class SatochipCommandSet {
      * @throws Exception if the import fails or URL is invalid
      */
     public byte satocashImportMint(String mintUrl) throws Exception {
-        logger.info("SATOCHIPLIB: satocashImportMint");
+        logger.fine("SATOCHIPLIB: satocashImportMint");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashImportMint;
@@ -3430,7 +3435,7 @@ public class SatochipCommandSet {
      * @throws Exception if the export fails or index is invalid
      */
     public String satocashExportMint(byte index) throws Exception {
-        logger.info("SATOCHIPLIB: satocashExportMint");
+        logger.fine("SATOCHIPLIB: satocashExportMint");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashExportMint;
@@ -3463,7 +3468,7 @@ public class SatochipCommandSet {
      * @throws Exception if the removal fails
      */
     public void satocashRemoveMint(byte index) throws Exception {
-        logger.info("SATOCHIPLIB: satocashRemoveMint");
+        logger.fine("SATOCHIPLIB: satocashRemoveMint");
 
         byte cla = (byte) 0xB0;
         byte ins = (byte) Constants.satocashRemoveMint;
@@ -3485,7 +3490,7 @@ public class SatochipCommandSet {
      * @throws Exception if the import fails
      */
     public byte satocashImportKeyset(byte[] keysetIdBytes, byte mintIndex, byte unit) throws Exception {
-        logger.info("SATOCHIPLIB: satocashImportKeyset");
+        logger.fine("SATOCHIPLIB: satocashImportKeyset");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashImportKeyset;
@@ -3514,7 +3519,7 @@ public class SatochipCommandSet {
      * @throws Exception if the export fails
      */
     public Map<Byte, SatocashKeyset> satocashExportKeysets(byte[] indexes) throws Exception {
-        logger.info("SATOCHIPLIB: satocashExportKeysets");
+        logger.fine("SATOCHIPLIB: satocashExportKeysets");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashExportKeyset;
@@ -3555,7 +3560,7 @@ public class SatochipCommandSet {
      * @throws Exception if the removal fails
      */
     public void satocashRemoveKeyset(byte index) throws Exception {
-        logger.info("SATOCHIPLIB: satocashRemoveKeyset");
+        logger.fine("SATOCHIPLIB: satocashRemoveKeyset");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashRemoveKeyset;
@@ -3579,7 +3584,7 @@ public class SatochipCommandSet {
      */
     public int satocashImportProof(byte keysetIndex, byte amountExponent,
                                    byte[] secretBytes, byte[] unblindedKeyBytes) throws Exception {
-        logger.info("SATOCHIPLIB: satocashImportProof");
+        logger.fine("SATOCHIPLIB: satocashImportProof");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashImportProof;
@@ -3610,7 +3615,7 @@ public class SatochipCommandSet {
      * @throws Exception if the export fails
      */
     public Map<Integer, SatocashProof> satocashExportProofs(int[] indexes) throws Exception {
-        logger.info("SATOCHIPLIB: satocashExportProofs");
+        logger.fine("SATOCHIPLIB: satocashExportProofs");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashExportProofs;
@@ -3647,7 +3652,7 @@ public class SatochipCommandSet {
                     proofMap.put(proof.getIndex(), proof);
                     proofCounter++;
                 } catch (Exception e) {
-                    logger.warning("Failed to parse proof at position " + pos + ": " + e.getMessage());
+                    logger.warning("SATOCHIPLIB: satocashExportProofs: failed to parse proof at position " + pos + ": " + e.getMessage());
                 }
             }
             pos += 70;
@@ -3677,7 +3682,7 @@ public class SatochipCommandSet {
                         proofMap.put(proof.getIndex(), proof);
                         proofCounter++;
                     } catch (Exception e) {
-                        logger.warning("Failed to parse proof at position " + pos + ": " + e.getMessage());
+                        logger.warning("SATOCHIPLIB: satocashExportProofs: failed to parse proof at position " + pos + ": " + e.getMessage());
                     }
                 }
                 pos += 70;
@@ -3696,7 +3701,7 @@ public class SatochipCommandSet {
      * @throws Exception if the query fails
      */
     public byte[] satocashGetProofInfo(byte unit, byte infoType, int indexStart, int indexSize) throws Exception {
-        logger.info("SATOCHIPLIB: satocashGetProofInfo");
+        logger.fine("SATOCHIPLIB: satocashGetProofInfo");
 
         byte cla = (byte) 0xB0;
         byte ins = Constants.satocashGetProofInfo;
@@ -3750,9 +3755,9 @@ public class SatochipCommandSet {
     public APDUResponse cardExportPersoPubkey(){
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_PUBKEY, 0x00, 0x00, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU cardExportPersoPubkey:"+ plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardExportPersoPubkey: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardExportPersoPubkey:"+ respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardExportPersoPubkey: " + describe(respApdu));
 
         return respApdu;
     }
@@ -3793,9 +3798,9 @@ public class SatochipCommandSet {
         byte p1 = 0x00;
         byte p2 = 0x01; // init
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_CERTIFICATE, p1, p2, new byte[0]);
-        logger.info("SATOCHIPLIB: C-APDU cardExportPersoCertificate - init:"+ plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardExportPersoCertificate - init: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardExportPersoCertificate - init:"+ respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardExportPersoCertificate - init: " + describe(respApdu));
         respApdu.checkOK();
         int sw = respApdu.getSw();
         byte[] response = null;
@@ -3803,7 +3808,7 @@ public class SatochipCommandSet {
         if (sw == 0x9000){
             response= respApdu.getData();
             certificate_size= (response[0] & 0xFF) * 256 + (response[1] & 0xFF);
-            logger.warning("SATOCHIPLIB: personalization certificate export: code:" + sw + "certificate size: " + certificate_size);
+            logger.fine("SATOCHIPLIB: personalization certificate export: certificate size: " + certificate_size);
         } else if (sw == 0x6D00){
             logger.warning("SATOCHIPLIB: Error during personalization certificate export: command unsupported(0x6D00)");
             return "Error during personalization certificate export: command unsupported(0x6D00)";
@@ -3831,9 +3836,9 @@ public class SatochipCommandSet {
             data[2]= (byte) ((chunk_size>>8)&0xFF);;
             data[3]= (byte) (chunk_size & 0xFF);
             plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_CERTIFICATE, p1, p2, data);
-            logger.warning("SATOCHIPLIB: C-APDU cardExportPersoCertificate - update:"+ plainApdu.toHexString());
+            logger.fine("SATOCHIPLIB: C-APDU cardExportPersoCertificate - update: " + describe(plainApdu));
             respApdu = this.cardTransmit(plainApdu);
-            logger.warning("SATOCHIPLIB: R-APDU cardExportPersoCertificate - update:"+ respApdu.toHexString());
+            logger.fine("SATOCHIPLIB: R-APDU cardExportPersoCertificate - update: " + describe(respApdu));
             respApdu.checkOK();
             // update certificate
             response= respApdu.getData();
@@ -3848,9 +3853,9 @@ public class SatochipCommandSet {
         data[2]= (byte) ((remaining_size>>8)&0xFF);;
         data[3]= (byte) (remaining_size & 0xFF);
         plainApdu = new APDUCommand(0xB0, INS_EXPORT_PKI_CERTIFICATE, p1, p2, data);
-        logger.warning("SATOCHIPLIB: C-APDU cardExportPersoCertificate - final:"+ plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardExportPersoCertificate - final: " + describe(plainApdu));
         respApdu = this.cardTransmit(plainApdu);
-        logger.warning("SATOCHIPLIB: R-APDU cardExportPersoCertificate - final:"+ respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardExportPersoCertificate - final: " + describe(respApdu));
         respApdu.checkOK();
         // update certificate
         response= respApdu.getData();
@@ -3859,7 +3864,6 @@ public class SatochipCommandSet {
 
         // parse and return raw certificate
         String cert_pem= parser.convertBytesToStringPem(certificate);
-        logger.warning("SATOCHIPLIB: cardExportPersoCertificate checking certificate:" + Arrays.toString(certificate));
 
         return cert_pem;
     }
@@ -3892,9 +3896,9 @@ public class SatochipCommandSet {
     public APDUResponse cardChallengeResponsePerso(byte[] challenge_from_host){
 
         APDUCommand plainApdu = new APDUCommand(0xB0, INS_CHALLENGE_RESPONSE_PKI, 0x00, 0x00, challenge_from_host);
-        logger.info("SATOCHIPLIB: C-APDU cardChallengeResponsePerso:"+ plainApdu.toHexString());
+        logger.fine("SATOCHIPLIB: C-APDU cardChallengeResponsePerso: " + describe(plainApdu));
         APDUResponse respApdu = this.cardTransmit(plainApdu);
-        logger.info("SATOCHIPLIB: R-APDU cardChallengeResponsePerso:"+ respApdu.toHexString());
+        logger.fine("SATOCHIPLIB: R-APDU cardChallengeResponsePerso: " + describe(respApdu));
 
         return respApdu;
     }
@@ -3953,7 +3957,6 @@ public class SatochipCommandSet {
         String cert_pem="";
         try{
             cert_pem = cardExportPersoCertificate();
-            logger.warning("SATOCHIPLIB: Cert PEM: "+ cert_pem);
         } catch (Exception e){
             logger.warning("SATOCHIPLIB: Exception in cardVerifyAuthenticity:"+ e);
             txt_error= "Unable to retrieve device certificate!";
@@ -3981,17 +3984,12 @@ public class SatochipCommandSet {
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC"); // without BC provider, validation fails...
             X509Certificate certCa = (X509Certificate) certificateFactory.generateCertificate(isCa);
             txt_ca= certCa.toString();
-            logger.warning("SATOCHIPLIB: certCa: " + txt_ca);
             X509Certificate certSubca = (X509Certificate) certificateFactory.generateCertificate(isSubca);
             txt_subca= certSubca.toString();
-            logger.warning("SATOCHIPLIB: certSubca: " + txt_subca);
             X509Certificate certDevice = (X509Certificate) certificateFactory.generateCertificate(isDevice);
-            logger.warning("SATOCHIPLIB: certDevice: " + certDevice);
             txt_device= certDevice.toString();
-            logger.warning("SATOCHIPLIB: txtCertDevice: " + txt_device);
 
             pubkeyDevice= certDevice.getPublicKey();
-            logger.warning("SATOCHIPLIB: certDevice pubkey: " + pubkeyDevice.toString());
 
             // Verify the two chain links directly against BouncyCastle, rather than through
             // CertPathValidator. PKIX applies the JVM-wide jdk.certpath.disabledAlgorithms
@@ -4011,11 +4009,10 @@ public class SatochipCommandSet {
             } catch (Exception e) {
                 throw new RuntimeException("device certificate is not signed by the sub-CA", e);
             }
-            logger.info("SATOCHIPLIB: Certificate chain validated!");
+            logger.fine("SATOCHIPLIB: Certificate chain validated!");
 
         }catch (Exception e){
-            logger.warning("SATOCHIPLIB: Exception in cardVerifyAuthenticity:"+ e);
-            e.printStackTrace();
+            logger.log(Level.WARNING, "SATOCHIPLIB: Exception in cardVerifyAuthenticity", e);
             txt_error= "Failed to validate certificate chain! \r\n\r\n" + e.toString();
             String[] out = new String [] {FAIL, txt_ca, txt_subca, txt_device, txt_error};
             return out;
@@ -4052,8 +4049,7 @@ public class SatochipCommandSet {
             }
             // TODO: pubkeyDevice should be equal to authentikey
         }catch (Exception e){
-            logger.warning("SATOCHIPLIB: Exception in cardVerifyAuthenticity:"+ e);
-            e.printStackTrace();
+            logger.log(Level.WARNING, "SATOCHIPLIB: Exception in cardVerifyAuthenticity", e);
             txt_error= "Failed to verify challenge-response! \r\n\r\n" + e.toString();
             String[] out = new String [] {FAIL, txt_ca, txt_subca, txt_device, txt_error};
             return out;
