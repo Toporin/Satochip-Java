@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This file covers the whole repository. Entries before 0.3.4 describe `satochip-lib` only, which is
 where this changelog previously lived.
 
+## [0.3.6]:
+
+Logging and dependency hygiene, following a security review of the Seedkeeper Android app.
+
+* **No secrets or personal data in logs.** APDUs used to be logged in hex, some at WARNING level,
+  which reaches logcat in every build: the first command of a SeedKeeper import carries the secret
+  label, and at INFO decrypted secret exports, BIP85 entropy, card labels and xpubs were logged too.
+  Commands and responses are now only described by header, lengths and status word, whatever the
+  level. Routine messages are logged at `FINE`, so nothing reaches the default `INFO` output;
+  `WARNING` is kept for real failures. `System.out` and `printStackTrace()` are gone from
+  `satochip-lib`.
+* **The logger level belongs to the application.** The `SatochipCommandSet` constructor no longer
+  resets the shared `org.satochip.client` logger to `WARNING`. `setLoggerLevel(String)` accepts any
+  `java.util.logging` level name, case-insensitively, plus `"debug"` (`FINE`).
+* **No global "BC" provider needed.** The library passes its own `BouncyCastleProvider` instance
+  (`org.satochip.client.BouncyCastle.PROVIDER`) to every JCA call, so it works on Android and desktop
+  without setup. `PCSCCardChannel` and `NFCCardManager` no longer call
+  `Crypto.addBouncyCastleProvider()`, which on Android replaced the platform's "BC" provider for the
+  whole app; the method is kept but deprecated. Apps that look up "BC" by name in their own code
+  must now register it themselves.
+* **BitcoinJ dropped.** `satochip-lib` only used its `Sha256Hash` and `Base58`, now replaced by
+  `org.satochip.client.Sha256` and `org.satochip.client.Base58`. Apps that use BitcoinJ must declare
+  it themselves.
+* **BouncyCastle: `bcprov-jdk15to18:1.86`** instead of `bcprov-jdk18on:1.78`. This is the artifact
+  BitcoinJ uses, so Gradle keeps a single copy, the newest, with no exclusions. Builds that also get
+  `bcprov-jdk18on` from another dependency still need to exclude one of the two.
+* **`SW_LOCK_ERROR` (0x9C30).** `Constants.SW_LOCK_ERROR`, `SW_EXPORT_NOT_ALLOWED`,
+  `SW_USAGE_NOT_ALLOWED` and `SW_WRONG_SECRET_TYPE` were declared as `byte` and truncated (e.g. to
+  0x30); they are now `int` with their full value. `APDUResponse.SW_LOCK_ERROR` is added, and the
+  `check*()` methods throw the new `LockErrorException` (a subclass of `APDUException`, `sw` unchanged)
+  for this status word.
+* **`NFCCardManager` without polling thread.** The card session now runs from `onTagDiscovered()`:
+  connect, `CardListener.onConnected()`, close, `onDisconnected()`. This removes the endless loop and
+  the "Tag is out of date" stack traces printed on every disconnect. The channel is only valid during
+  `onConnected()`. The class still extends `Thread` so that `start()` keeps compiling, as a no-op.
+* **`satochip-android` on JitPack**, as `com.github.Toporin.Satochip-Java:satochip-android:<tag>`
+  (AAR with sources).
+
 ## [0.3.5]:
 
 Add `cardResetFactoryV3()`: factory reset for Satochip v0.16 and higher, which replaces the legacy

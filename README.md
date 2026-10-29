@@ -71,7 +71,7 @@ Place the jar in a folder (e.g. `libs`) and add to the *dependencies* section of
 *build.gradle*:
 
 ```groovy
-api files('libs/satochip-lib-0.3.4.jar')
+api files('libs/satochip-lib-0.3.6.jar')
 ```
 
 To install into your local Maven repository instead:
