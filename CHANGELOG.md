@@ -43,6 +43,10 @@ Logging and dependency hygiene, following a security review of the Seedkeeper An
   connect, `CardListener.onConnected()`, close, `onDisconnected()`. This removes the endless loop and
   the "Tag is out of date" stack traces printed on every disconnect. The channel is only valid during
   `onConnected()`. The class still extends `Thread` so that `start()` keeps compiling, as a no-op.
+* **`satochip-android` logs through `java.util.logging`** (logger `org.satochip.android`) instead of
+  `android.util.Log`, whose `Log.d` calls always reached logcat, whatever the app's settings.
+  `NFCCardChannel` no longer logs each APDU: with the secure channel it only saw the encrypted
+  envelope, and `SatochipCommandSet` already logs the plain command header.
 * **`satochip-android` on JitPack**, as `com.github.Toporin.Satochip-Java:satochip-android:<tag>`
   (AAR with sources).
 

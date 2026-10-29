@@ -3,10 +3,11 @@ package org.satochip.android;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.nfc.tech.IsoDep;
-import android.util.Log;
 import org.satochip.io.CardListener;
 
 import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Manages connection of NFC-based cards and notifies a {@link CardListener}.
@@ -19,9 +20,14 @@ import java.io.IOException;
  *
  * <p>There is no polling thread. The class still extends {@link Thread} so that existing code
  * calling {@code start()} keeps compiling, but starting it is no longer needed and does nothing.</p>
+ *
+ * <p>Logs go through the {@code java.util.logging} logger {@code org.satochip.android}, like
+ * satochip-lib's {@code org.satochip.client}: routine messages at {@code FINE}, failures at
+ * {@code WARNING}. On Android, a {@code FINE} record only reaches logcat if the logger level allows
+ * it and debug is enabled for the tag ({@code adb shell setprop log.tag.org.satochip.android DEBUG}).</p>
  */
 public class NFCCardManager extends Thread implements NfcAdapter.ReaderCallback {
-  private static final String TAG = "NFCCardManager";
+  private static final Logger logger = Logger.getLogger("org.satochip.android");
   private static final int TIMEOUT_MS = 120000;
 
   private volatile IsoDep isoDep;
@@ -71,26 +77,26 @@ public class NFCCardManager extends Thread implements NfcAdapter.ReaderCallback 
   public synchronized void onTagDiscovered(Tag tag) {
     IsoDep tagIsoDep = IsoDep.get(tag);
     if (tagIsoDep == null) {
-      Log.w(TAG, "tag does not support IsoDep, ignored");
+      logger.fine("NFCCardManager: tag does not support IsoDep, ignored");
       return;
     }
     try {
       tagIsoDep.connect();
       tagIsoDep.setTimeout(TIMEOUT_MS);
     } catch (IOException | RuntimeException e) {
-      Log.w(TAG, "error connecting to tag: " + e);
+      logger.warning("NFCCardManager: error connecting to tag: " + e);
       return;
     }
 
     isoDep = tagIsoDep;
-    Log.d(TAG, "tag connected");
+    logger.fine("NFCCardManager: tag connected");
     try {
       CardListener listener = cardListener;
       if (listener != null) {
         listener.onConnected(new NFCCardChannel(tagIsoDep));
       }
     } catch (RuntimeException e) {
-      Log.w(TAG, "card listener failed: " + e);
+      logger.log(Level.WARNING, "NFCCardManager: card listener failed", e);
     } finally {
       isoDep = null;
       try {
@@ -98,7 +104,7 @@ public class NFCCardManager extends Thread implements NfcAdapter.ReaderCallback 
       } catch (IOException | RuntimeException e) {
         // the tag is already gone
       }
-      Log.d(TAG, "tag disconnected");
+      logger.fine("NFCCardManager: tag disconnected");
       CardListener listener = cardListener;
       if (listener != null) {
         listener.onDisconnected();
