@@ -157,7 +157,7 @@ public class SecureChannelSession {
     try {
       // generate keypair
       ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
-      KeyPairGenerator g = KeyPairGenerator.getInstance("ECDH", "BC");
+      KeyPairGenerator g = KeyPairGenerator.getInstance("ECDH", BouncyCastle.PROVIDER);
       g.initialize(ecSpec, random);
       keyPair = g.generateKeyPair();
       publicKey = ((ECPublicKey) keyPair.getPublic()).getQ().getEncoded(false);
@@ -204,16 +204,15 @@ public class SecureChannelSession {
 
       // Diffie-Hellman
       // ECParameterSpec ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1");
-      // KeyPairGenerator g = KeyPairGenerator.getInstance("ECDH", "BC");
       // g.initialize(ecSpec, random);
       // KeyPair keyPair = g.generateKeyPair();
       // publicKey = ((ECPublicKey) keyPair.getPublic()).getQ().getEncoded(false);
 
-      KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH", "BC");
+      KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH", BouncyCastle.PROVIDER);
       keyAgreement.init(keyPair.getPrivate());
 
       ECPublicKeySpec cardKeySpec = new ECPublicKeySpec(ecSpec.getCurve().decodePoint(keyData), ecSpec);
-      ECPublicKey cardKey = (ECPublicKey) KeyFactory.getInstance("ECDSA", "BC").generatePublic(cardKeySpec);
+      ECPublicKey cardKey = (ECPublicKey) KeyFactory.getInstance("ECDSA", BouncyCastle.PROVIDER).generatePublic(cardKeySpec);
 
       keyAgreement.doPhase(cardKey, true);
       secret = keyAgreement.generateSecret();
@@ -299,7 +298,7 @@ public class SecureChannelSession {
       // encrypt data
       IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
       sessionEncKey = new SecretKeySpec(derived_key, "AES");
-      sessionCipher = Cipher.getInstance("AES/CBC/PKCS7PADDING", "BC");
+      sessionCipher = Cipher.getInstance("AES/CBC/PKCS7PADDING", BouncyCastle.PROVIDER);
       sessionCipher.init(Cipher.ENCRYPT_MODE, sessionEncKey, ivParameterSpec);
       byte[] encrypted = sessionCipher.doFinal(plainBytes);
 
@@ -407,7 +406,7 @@ public class SecureChannelSession {
       // decrypt data
       IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
       sessionEncKey = new SecretKeySpec(derived_key, "AES");
-      sessionCipher = Cipher.getInstance("AES/CBC/PKCS7PADDING", "BC");
+      sessionCipher = Cipher.getInstance("AES/CBC/PKCS7PADDING", BouncyCastle.PROVIDER);
       sessionCipher.init(Cipher.DECRYPT_MODE, sessionEncKey, ivParameterSpec);
       byte[] decrypted = sessionCipher.doFinal(ciphertext);
 

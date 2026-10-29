@@ -3994,7 +3994,7 @@ public class SatochipCommandSet {
             }
             InputStream isDevice = new ByteArrayInputStream(cert_pem.getBytes(StandardCharsets.UTF_8));
             // gen certs
-            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", "BC"); // without BC provider, validation fails...
+            CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER); // without BC provider, validation fails...
             X509Certificate certCa = (X509Certificate) certificateFactory.generateCertificate(isCa);
             txt_ca= certCa.toString();
             X509Certificate certSubca = (X509Certificate) certificateFactory.generateCertificate(isSubca);
@@ -4007,18 +4007,18 @@ public class SatochipCommandSet {
             // Verify the two chain links directly against BouncyCastle, rather than through
             // CertPathValidator. PKIX applies the JVM-wide jdk.certpath.disabledAlgorithms
             // security property, which lists secp256k1 on current JDK 8 and 11 builds and so
-            // rejects this chain before any provider is consulted; Certificate.verify() is not
+            // rejects this chain before any provider is consulted; a plain signature check is not
             // subject to that policy. The root CA and sub-CA are pinned resources loaded above,
             // so the verifying keys are fixed by construction.
             // Note this checks the signatures only: certificate validity periods and issuer
             // name chaining are deliberately not enforced.
             try {
-                certSubca.verify(certCa.getPublicKey(), "BC");
+                verifyCertificateSignature(certSubca, certCa.getPublicKey());
             } catch (Exception e) {
                 throw new RuntimeException("sub-CA certificate is not signed by the root CA", e);
             }
             try {
-                certDevice.verify(certSubca.getPublicKey(), "BC");
+                verifyCertificateSignature(certDevice, certSubca.getPublicKey());
             } catch (Exception e) {
                 throw new RuntimeException("device certificate is not signed by the sub-CA", e);
             }
@@ -4072,4 +4072,22 @@ public class SatochipCommandSet {
         return out;
     }
 
+    /**
+     * Checks that a certificate is signed by the given issuer key, using {@link BouncyCastle#PROVIDER}.
+     *
+     * <p>Equivalent to {@code cert.verify(issuerKey, provider)}, which only exists from Android
+     * API 24, so the signature is checked directly over the TBS part of the certificate.</p>
+     *
+     * @throws java.security.GeneralSecurityException if the signature does not verify
+     */
+    private static void verifyCertificateSignature(X509Certificate cert, PublicKey issuerKey)
+            throws java.security.GeneralSecurityException {
+        java.security.Signature verifier =
+                java.security.Signature.getInstance(cert.getSigAlgName(), BouncyCastle.PROVIDER);
+        verifier.initVerify(issuerKey);
+        verifier.update(cert.getTBSCertificate());
+        if (!verifier.verify(cert.getSignature())) {
+            throw new java.security.SignatureException("certificate signature does not verify");
+        }
+    }
 }

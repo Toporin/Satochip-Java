@@ -750,7 +750,7 @@ public class SatochipParser{
         // convert msg to hash
         MessageDigest md;
         try {
-            md = MessageDigest.getInstance("SHA256", "BC");
+            md = MessageDigest.getInstance("SHA256", BouncyCastle.PROVIDER);
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }
@@ -814,7 +814,7 @@ public class SatochipParser{
         // convert msg to hash
         MessageDigest md;
         try {
-            md = MessageDigest.getInstance("SHA256", "BC");
+            md = MessageDigest.getInstance("SHA256", BouncyCastle.PROVIDER);
         } catch(Exception e) {
             throw new RuntimeException("Is BouncyCastle in the classpath?", e);
         }

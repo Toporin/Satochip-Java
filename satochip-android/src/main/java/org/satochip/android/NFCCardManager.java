@@ -5,7 +5,6 @@ import android.nfc.Tag;
 import android.nfc.tech.IsoDep;
 import android.os.SystemClock;
 import android.util.Log;
-import org.satochip.globalplatform.Crypto;
 import org.satochip.io.CardListener;
 
 import java.io.IOException;
@@ -23,9 +22,6 @@ public class NFCCardManager extends Thread implements NfcAdapter.ReaderCallback 
   private CardListener cardListener;
   private int loopSleepMS;
 
-  static {
-    Crypto.addBouncyCastleProvider();
-  }
 
   /**
    * Constructs an NFC Card Manager with default delay between loop iterations.
