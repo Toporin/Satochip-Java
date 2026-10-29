@@ -21,12 +21,6 @@ dependencies {
     // org.bouncycastle.math.ec.ECPoint, so BouncyCastle is part of this module's
     // public API and callers need it on their compile classpath.
     api 'org.bouncycastle:bcprov-jdk18on:1.78'
-    // bitcoinj brings its own BouncyCastle build (bcprov-jdk15to18) under a different
-    // artifactId, which Gradle cannot dedupe against ours; exclude it so only one
-    // copy of the org.bouncycastle packages is on the classpath.
-    implementation('org.bitcoinj:bitcoinj-core:0.16.2') {
-        exclude group: 'org.bouncycastle'
-    }
 }
 
 publishing {

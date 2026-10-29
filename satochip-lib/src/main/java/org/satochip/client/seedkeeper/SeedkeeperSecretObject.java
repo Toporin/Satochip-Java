@@ -1,6 +1,6 @@
 package org.satochip.client.seedkeeper;
 
-import org.bitcoinj.core.Sha256Hash;
+import org.satochip.client.Sha256;
 
 import java.math.BigInteger;
 import java.util.Arrays;
@@ -67,7 +67,7 @@ public class SeedkeeperSecretObject {
             return secretHeader.fingerprintBytes;
         }
 
-        byte[] secretHash = Sha256Hash.hash(secretBytes);
+        byte[] secretHash = Sha256.hash(secretBytes);
         return Arrays.copyOfRange(secretHash, 0, 4);
     }
 
@@ -75,7 +75,7 @@ public class SeedkeeperSecretObject {
         if (isEncrypted) {
             return new byte[0];
         }
-        return Sha256Hash.hash(Arrays.copyOfRange(secretBytes, 1, secretBytes.length));
+        return Sha256.hash(Arrays.copyOfRange(secretBytes, 1, secretBytes.length));
     }
 
     // todo: Master Password secret, check implementation

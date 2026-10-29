@@ -1,7 +1,5 @@
 package org.satochip.client;
 
-import org.bitcoinj.core.Base58;
-import org.bitcoinj.core.Sha256Hash;
 import org.bouncycastle.crypto.digests.RIPEMD160Digest;
 import org.satochip.client.satocash.*;
 import org.satochip.client.seedkeeper.*;
@@ -1683,7 +1681,7 @@ public class SatochipCommandSet {
                 parentPubkeyBytes = parser.compressPubKey(parentPubkeyBytes);
             }
 
-            fingerprintBytes = Arrays.copyOfRange(digestRipeMd160(Sha256Hash.hash(parentPubkeyBytes)), 0, 4);
+            fingerprintBytes = Arrays.copyOfRange(digestRipeMd160(Sha256.hash(parentPubkeyBytes)), 0, 4);
             childNumberBytes = Arrays.copyOfRange(bytePath, bytePath.length - 4, bytePath.length);
         }
 
@@ -1700,47 +1698,9 @@ public class SatochipCommandSet {
             throw new Exception("wrongXpubLength " + xpubBytes.length + " " + 78);
         }
 
-        String xpub = encodeChecked(xpubBytes);
-//        String xpub = Base58.encodeChecked(0, xpubBytes);
+        String xpub = Base58.encodeChecked(xpubBytes);
         logger.fine("SATOCHIPLIB: cardBip32GetXpub: xpub computed at depth " + depth);
         return xpub;
-    }
-
-    /**
-     * Encodes bytes with Base58Check encoding.
-     *
-     * <p>This method adds a 4-byte checksum to the input data and encodes the result
-     * using Base58 encoding. This is the standard encoding used for Bitcoin addresses
-     * and extended keys.</p>
-     *
-     * @param bytes the bytes to encode
-     * @return the Base58Check-encoded string
-     * @see #calculateChecksum(byte[])
-     */
-    private String encodeChecked(byte[] bytes) {
-        byte[] checksum = calculateChecksum(bytes);
-        byte[] checksummedBytes = new byte[bytes.length + 4];
-        System.arraycopy(bytes, 0, checksummedBytes, 0, bytes.length);
-        System.arraycopy(checksum, 0, checksummedBytes, bytes.length, 4);
-        return Base58.encode(checksummedBytes);
-//        return encode(checksummedBytes);
-    }
-
-    /**
-     * Calculates a 4-byte checksum for Base58Check encoding.
-     *
-     * <p>The checksum is the first 4 bytes of the double SHA256 hash of the input data.
-     * This provides error detection for encoded data.</p>
-     *
-     * @param bytes the input bytes to checksum
-     * @return the 4-byte checksum
-     * @see #encodeChecked(byte[])
-     */
-    private byte[] calculateChecksum(byte[] bytes) {
-        byte[] hash = Sha256Hash.hashTwice(bytes);
-        byte[] checksum = new byte[4];
-        System.arraycopy(hash, 0, checksum, 0, 4);
-        return checksum;
     }
 
     /**
