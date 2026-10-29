@@ -51,10 +51,17 @@ repositories {
 dependencies {
     // desktop: pulls satochip-lib transitively
     implementation 'com.github.Toporin.Satochip-Java:satochip-desktop:<tag>'
-    // or the core library alone, e.g. on Android
+    // Android (NFC): an AAR, also pulls satochip-lib transitively
+    implementation 'com.github.Toporin.Satochip-Java:satochip-android:<tag>'
+    // or the core library alone
     implementation 'com.github.Toporin.Satochip-Java:satochip-lib:<tag>'
 }
 ```
+
+`satochip-lib` depends on `org.bouncycastle:bcprov-jdk15to18`, the same artifact as BitcoinJ, so
+an app using both gets a single BouncyCastle (the newer version) without any exclusion. The
+library passes its own BouncyCastle provider instance to the JCA calls: there is no need to
+register a "BC" provider, and the platform's providers are left untouched.
 
 `<tag>` is a git tag of this repository, or a commit hash.
 
@@ -70,7 +77,7 @@ api files('libs/satochip-lib-0.3.4.jar')
 To install into your local Maven repository instead:
 
 ```
-./gradlew :satochip-lib:publishToMavenLocal :satochip-desktop:publishToMavenLocal
+./gradlew :satochip-lib:publishToMavenLocal :satochip-desktop:publishToMavenLocal :satochip-android:publishToMavenLocal
 ```
 
 ## Compatibility notes
