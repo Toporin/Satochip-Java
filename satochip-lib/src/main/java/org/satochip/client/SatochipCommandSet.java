@@ -1793,7 +1793,7 @@ public class SatochipCommandSet {
      * The function returns the public key corresponding to the private key.
      *
      * @param keynbr key number or 0xFF for the last derived Bip32 extended key
-     * @param tweak tweak data (32b)
+     * @param tweak raw 32-byte tweak, or null/empty for no script tree (encoded as zeros before v0.16)
      * @param bypass_flag if set to True, the tweak is bypassed and the private key is used as is (for example for Nostr signatures)
      * @return the tweaked public key as 65 bytes (uncompressed public)
      * @throws IllegalArgumentException
@@ -1803,13 +1803,22 @@ public class SatochipCommandSet {
      */
     public byte[] cardTaprootTweakPrivateKey(int keynbr, byte[] tweak, Boolean bypass_flag) throws Exception {
 
-        // A null or empty tweak means tweak_size = 0: BIP86 key-path-only spending, where the
-        // output commits to no script tree. Satochip applet v0.16 requires that form, and a
-        // 32-byte all-zero tweak is NOT equivalent to it -- BIP341 hashes x(P) alone in the first
-        // case and x(P) || 32 zero bytes in the second, giving a different output key.
         int tweakSize = (tweak == null) ? 0 : tweak.length;
         if (tweakSize != 0 && tweakSize != 32) {
             throw new IllegalArgumentException("Wrong tweak length (should be 0 or 32)");
+        }
+        if (tweakSize == 0) {
+            if (status == null) {
+                cardGetStatus().checkOK();
+            }
+            if (status.getProtocolVersion() == 0) {
+                throw new IllegalStateException("Card protocol version unavailable");
+            }
+            // Legacy firmware hashes x(P) XOR tweak; v0.16 hashes x(P) || tweak.
+            if (status.getProtocolVersion() < 0x0010) {
+                tweak = new byte[32];
+                tweakSize = tweak.length;
+            }
         }
 
         //data: [tweak_size (1b) | tweak data (0 or 32b)]
