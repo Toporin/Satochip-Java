@@ -1781,6 +1781,12 @@ public class SatochipCommandSet {
         return respApdu.checkOK();
     }
 
+    /**
+     * Protocol version from which the Satochip applet computes a BIP341-compliant Taproot tweak
+     * (tagged hash over x(P) || h), encoded as {@link ApplicationStatus#getProtocolVersion()}
+     * reports it: 0x0010 is protocol 0.16.
+     */
+    private static final int PROTOCOL_VERSION_BIP341_TAPROOT_TWEAK = 0x0010; // v0.16
 
     /**
      * This function generates a tweaked private keys, as used in Bitcoin taproot (TapTweak).
@@ -1792,11 +1798,20 @@ public class SatochipCommandSet {
      * The chip then stores the tweaked key in a dedicated keyslot and available next for schnorr signing.
      * The function returns the public key corresponding to the private key.
      *
+     * <p>Taproot tweaking requires applet protocol 0.16 or later. Earlier applets computed the
+     * tagged hash over {@code x(P) XOR h} instead of the BIP341 {@code x(P) || h}, so they are
+     * rejected. Bypassing the tweak (e.g. for Nostr) works on any version.</p>
+     *
+     * <p>A null or empty tweak means the output commits to no script tree (BIP86 key-path-only
+     * spending): BIP341 then hashes x(P) alone. A 32-byte all-zero tweak is NOT equivalent: it is
+     * treated as a merkle root, so x(P) || 32 zero bytes is hashed, giving a different key.</p>
+     *
      * @param keynbr key number or 0xFF for the last derived Bip32 extended key
-     * @param tweak raw 32-byte tweak, or null/empty for no script tree (encoded as zeros before v0.16)
+     * @param tweak 32-byte taproot merkle root, or null/empty for no script tree (BIP86)
      * @param bypass_flag if set to True, the tweak is bypassed and the private key is used as is (for example for Nostr signatures)
      * @return the tweaked public key as 65 bytes (uncompressed public)
-     * @throws IllegalArgumentException
+     * @throws IllegalArgumentException if the tweak is neither empty nor 32 bytes
+     * @throws UnsupportedOperationException if tweaking is requested on applet protocol &lt; 0.16
      * @throws APDUException if command APDU fails
      * @see #cardBip32GetExtendedKey(String, Byte, Integer)
      *
@@ -1807,17 +1822,14 @@ public class SatochipCommandSet {
         if (tweakSize != 0 && tweakSize != 32) {
             throw new IllegalArgumentException("Wrong tweak length (should be 0 or 32)");
         }
-        if (tweakSize == 0) {
+        if (!bypass_flag) {
             if (status == null) {
                 cardGetStatus().checkOK();
             }
-            if (status.getProtocolVersion() == 0) {
-                throw new IllegalStateException("Card protocol version unavailable");
-            }
-            // Legacy firmware hashes x(P) XOR tweak; v0.16 hashes x(P) || tweak.
-            if (status.getProtocolVersion() < 0x0010) {
-                tweak = new byte[32];
-                tweakSize = tweak.length;
+            if (status.getProtocolVersion() < PROTOCOL_VERSION_BIP341_TAPROOT_TWEAK) {
+                throw new UnsupportedOperationException(
+                        "Taproot tweak requires Satochip applet protocol >= 0.16 "
+                        + "(earlier versions are not BIP341-compliant)");
             }
         }
 

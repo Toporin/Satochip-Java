@@ -79,10 +79,10 @@ public class ApplicationStatus {
             long version = ((data[0] & 0xffL) << 24) | ((data[1] & 0xffL) << 16)
                     | ((data[2] & 0xffL) << 8) | (data[3] & 0xffL);
             // Policies: Schnorr at 13 (since 0.14-0.5), MuSig2 at 16; 0 = enabled.
-            boolean schnorr_enabled = version < 0x000e0005L
-                    || (data.length >= 16 && data[13] == 0);
-            supports_taproot = data.length >= 12 && version >= 0x000e0001L
-                    && schnorr_enabled;
+            boolean schnorr_enabled = data.length >= 16 && data[13] == 0;
+            // Require protocol 0.16: earlier applets compute a non-BIP341 Taproot tweak
+            // (tagged hash over x(P) XOR h instead of x(P) || h).
+            supports_taproot = version >= 0x00100000L && schnorr_enabled;
             // Require 0.15-0.1's protection against encrypted nonce replay.
             supports_taproot_multisig = supports_taproot && version >= 0x000f0001L
                     && data.length >= 17 && data[16] == 0;
