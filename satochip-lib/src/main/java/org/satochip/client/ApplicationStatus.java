@@ -11,6 +11,8 @@ public class ApplicationStatus {
     private boolean is_seeded= false;
     private boolean needs_secure_channel= false;
     private boolean needs_2FA= false;
+    private boolean supports_taproot = false;
+    private boolean supports_taproot_multisig = false;
 
     private byte protocol_major_version= (byte)0;
     private byte protocol_minor_version= (byte)0;
@@ -39,7 +41,7 @@ public class ApplicationStatus {
     
         int sw= rapdu.getSw();
         
-        if (sw==0x9000){
+        if (sw==0x9000 && rapdu.getData().length >= 4){
           
             byte[] data= rapdu.getData();
             protocol_major_version= data[0];
@@ -72,8 +74,11 @@ public class ApplicationStatus {
                 needs_secure_channel= (data[11]==0X00)? false : true;   
             } else {
                 needs_secure_channel= false;
-                needs_2FA= false; //default value
             }
+
+            // A zero policy byte enables Schnorr (13) or MuSig2 (16).
+            supports_taproot = protocol_version >= 0x0010 && data.length >= 16 && data[13] == 0;
+            supports_taproot_multisig = supports_taproot && data.length >= 17 && data[16] == 0;
         } else if (sw==0x9c04){
             setup_done= false;
             is_seeded= false;
@@ -92,6 +97,17 @@ public class ApplicationStatus {
     }
     public boolean needsSecureChannel() {
         return needs_secure_channel;
+    }
+    public boolean needs2FA() {
+        return needs_2FA;
+    }
+
+    public boolean supportsTaproot() {
+        return supports_taproot;
+    }
+
+    public boolean supportsTaprootMultisig() {
+        return supports_taproot_multisig;
     }
 
     // TODO: other gettters
