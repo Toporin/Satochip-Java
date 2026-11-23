@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This file covers the whole repository. Entries before 0.3.4 describe `satochip-lib` only, which is
 where this changelog previously lived.
 
+## [0.3.7]:
+
+Changes for the Nunchuk integration (PR #6).
+
+* **Taproot requires applet protocol 0.16.** Applets up to v0.15-0.1 computed the TapTweak tagged
+  hash over `x(P) XOR h` instead of the BIP341 `x(P) || h` (fixed in the Satochip applet v0.16).
+  Taproot was never in production on those versions, so `cardTaprootTweakPrivateKey()` now throws
+  `UnsupportedOperationException` when tweaking is requested on an older card. Bypassing the tweak
+  (e.g. for Nostr) still works on any version. A null or empty tweak means no script tree (BIP86);
+  a 32-byte all-zero tweak is treated as a merkle root and gives a different key.
+* **Taproot capabilities in the card status.** `ApplicationStatus.supportsTaproot()` (protocol 0.16+
+  with the Schnorr feature enabled) and `supportsTaprootMultisig()` (the MuSig2 feature also enabled).
+* **2FA status.** `ApplicationStatus.needs2FA()` is added. The 2FA flag is no longer reset to false
+  when the status does not report the secure channel byte.
+* **Response checks (API change).** `cardBip32ImportSeed()` and `cardSignTransactionHash()` now call
+  `checkOK()` and declare `throws APDUException`, so callers must handle it. `cardBip32ImportSeed()`
+  rejects seeds outside 16-64 bytes, and `cardSignTransactionHash()` throws
+  `IllegalArgumentException` instead of `RuntimeException` for wrong input lengths.
+* **MuSig2 fix.** `cardMusig2GenerateNonce()` encoded the length of `aggpk` instead of `extra` for
+  the extra input.
+
 ## [0.3.6]:
 
 Logging and dependency hygiene, following a security review of the Seedkeeper Android app.
